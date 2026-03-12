@@ -6,64 +6,100 @@ The system combines intelligent congestion prediction, adaptive signal control, 
 
 ---
 
-## Core Features
+# System Workflow
 
-### Emergency Priority Routing
-Emergency vehicles can request traffic clearance through a dedicated portal.  
-The system generates optimized signal corridors to ensure faster and safer movement.
+![System Workflow](docs/system_flow.png)
 
-### AI-Based Traffic Optimization
-ReDirect simulates AI-assisted congestion prediction and traffic density analysis to recommend better signal timings at busy intersections.
+The workflow demonstrates how emergency traffic clearance is handled:
 
-### Emergency Traffic API
-A structured backend API provides traffic snapshots and emergency request tracking, making the system easy to integrate with operator dashboards.
+1. Emergency vehicle submits a priority request.
+2. The backend analyzes traffic density and congestion levels.
+3. AI-based optimization calculates the fastest corridor.
+4. Traffic signals along the route receive priority instructions.
+5. The control dashboard confirms the emergency corridor activation.
 
-### Operator Dashboard
-The frontend provides a simple portal for traffic operators with:
+---
 
-- Live signal priority status cards
+# System Architecture
+
+![System Architecture](docs/architecture.png)
+
+ReDirect follows a lightweight modular architecture:
+
+- **Edge Layer**  
+  Processes vehicle metadata from cameras or sensors.
+
+- **AI Layer**  
+  Performs vehicle detection, density scoring, and congestion prediction.
+
+- **Backend Layer (FastAPI)**  
+  Handles emergency requests, signal optimization, and API services.
+
+- **Frontend Layer (React Portal)**  
+  Provides a dashboard for operators to monitor traffic and manage emergency requests.
+
+---
+
+# Dashboard Preview
+
+![Dashboard](docs/dashboard.png)
+
+The operator portal provides:
+
+- Live signal-priority cards
 - Emergency request submission form
 - Corridor confirmation timeline
 - Real-time traffic pressure indicators
 
+---
+
+# Core Features
+
+### Emergency Priority Routing
+Emergency vehicles can request traffic clearance through a dedicated portal.  
+The system generates optimized signal corridors to ensure faster movement.
+
+### AI-Based Traffic Optimization
+ReDirect simulates congestion prediction and traffic density analysis to recommend adaptive signal timings.
+
+### Emergency Traffic API
+A structured backend API provides traffic snapshots and emergency request tracking for dashboard integration.
+
 ### Edge-Friendly Processing
-Instead of relying on heavy video pipelines, the system demonstrates how lightweight vehicle metadata from edge devices can be processed and summarized efficiently.
+Instead of heavy video pipelines, the system processes lightweight vehicle metadata from edge devices.
 
 ---
 
-## Improvements in This Version
+# Improvements in This Version
 
 ### Frontend
 
-The React portal now includes:
-
-- cleaner dashboard layout
-- live signal-priority cards
-- improved emergency request workflow
-- built-in preview route for quick demonstration
+- redesigned React operator portal
+- signal priority cards
+- emergency request workflow
+- built-in preview route
 
 ### Backend
-
-The FastAPI backend now provides:
 
 - structured request schemas
 - dashboard snapshot endpoint
 - emergency request lifecycle tracking
-- automatic cleanup for expired requests
-- environment-based API key configuration
+- automatic TTL cleanup
+- environment-based API configuration
 
-### Repository Cleanup
+### Repository Optimization
 
-The repository is now lighter and cleaner:
+Unnecessary files are no longer tracked:
 
-- generated files removed
-- `.env` files excluded
-- local databases removed
-- caches and `node_modules` ignored
+- `.env`
+- local databases
+- caches
+- `node_modules`
+- generated build files
 
 ---
 
-## Project Structure
+# Project Structure
 
 ```text
 .
@@ -103,9 +139,9 @@ The repository is now lighter and cleaner:
 
 ---
 
-## Running the Project Locally
+# Running the Project Locally
 
-### Backend
+## Backend
 
 ```bash
 cd backend
@@ -116,7 +152,7 @@ copy .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Backend will run at:
+Backend runs at:
 
 ```
 http://localhost:8000
@@ -124,7 +160,7 @@ http://localhost:8000
 
 ---
 
-### Frontend
+## Frontend
 
 ```bash
 cd frontend
@@ -132,7 +168,7 @@ npm install
 npm run dev
 ```
 
-Frontend will run at:
+Frontend runs at:
 
 ```
 http://localhost:5173
@@ -140,7 +176,7 @@ http://localhost:5173
 
 ---
 
-## Preview and API Docs
+# Preview and API Docs
 
 Preview served by backend:
 
@@ -156,7 +192,7 @@ http://localhost:8000/docs
 
 ---
 
-## Core API Endpoints
+# Core API Endpoints
 
 - `GET /health`
 - `GET /preview`
@@ -168,15 +204,15 @@ http://localhost:8000/docs
 
 ---
 
-## Prototype Notes
+# Prototype Notes
 
-- The backend uses an in-memory store to keep the prototype lightweight and easy to run.
-- Signal recommendations are based on simulated vehicle counts and traffic density scoring.
-- AI and edge modules demonstrate how vehicle metadata could be summarized before reaching the central traffic control system.
+- The backend uses an in-memory store to keep the prototype lightweight.
+- Signal recommendations are based on simulated vehicle counts and density scoring.
+- AI and edge modules demonstrate how traffic metadata can be summarized before reaching the control system.
 
 ---
 
-## Documentation
+# Documentation
 
 - [Government evaluation notes](docs/government_evaluation.md)
 - [Project proposal](docs/samadhan_saathi_proposal.md)
