@@ -43,6 +43,7 @@ ReDirect follows a lightweight modular architecture:
 # Dashboard Preview
 
 ![Dashboard](docs/dashboard.png)
+![Dashboard](docs/dashboard_bottom.png)
 
 The operator portal provides:
 
