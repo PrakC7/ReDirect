@@ -1,35 +1,44 @@
-const API_BASE = '/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE || "/api/v1";
 
-export async function fetchStatus() {
-  // Simulate traffic status for demo
-  return Promise.resolve({
-    intersections: [
-      { id: 1, name: 'A', density_score: 1.2 },
-      { id: 2, name: 'B', density_score: 0.7 },
-      { id: 3, name: 'C', density_score: 1.7 },
-    ],
-    status: 'ok',
+async function request(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+    ...options,
   });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.detail || "Request failed. Please try again.");
+  }
+
+  return data;
 }
 
-export async function createEmergencyRoute(data) {
-  // Map frontend data to backend EmergencyVehicle model
-  const payload = {
-    id: Date.now(),
-    type: data.vehicleType,
-    location: data.from,
-    timestamp: new Date().toISOString(),
-    // Optionally, add more fields if backend expects them
-  };
-  const res = await fetch(`${API_BASE}/emergency/alert`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
+export function fetchDashboard() {
+  return request("/dashboard");
+}
+
+export function createEmergencyRequest(data) {
+  return request("/emergency/requests", {
+    method: "POST",
+    body: JSON.stringify({
+      requester_name: data.requesterName,
+      department: data.department,
+      vehicle_type: data.vehicleType,
+      purpose: data.purpose,
+      origin: data.origin,
+      destination: data.destination,
+      return_destination: data.returnDestination || null,
+      vehicle_id_type: data.vehicleIdType,
+      vehicle_id: data.vehicleId,
+      priority: data.priority,
+      estimated_travel_minutes: data.estimatedTravelMinutes,
+      route_notes: data.routeNotes || null,
+    }),
   });
-  if (!res.ok) {
-    throw new Error('Failed to submit emergency request');
-  }
-  return res.json();
 }
