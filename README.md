@@ -86,10 +86,12 @@ npm run dev
 Open:
 - Frontend: `http://localhost:5173`
 - API docs: `http://localhost:8000/docs`
+- Built preview from backend: `http://localhost:8000/preview`
 
 ## Core API endpoints
 
 - `GET /health`
+- `GET /preview`
 - `GET /api/v1/dashboard`
 - `POST /api/v1/emergency/requests`
 - `GET /api/v1/emergency/requests`

@@ -8,5 +8,7 @@ backend/redirect.db
 frontend/node_modules/
 frontend/dist/
 
+.codex-logs/
+
 .DS_Store
 Thumbs.db
