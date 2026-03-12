@@ -42,6 +42,7 @@ ReDirect follows a lightweight modular architecture:
 
 # Dashboard Preview
 
+![Dashboard](docs/main_dashboard.png)
 ![Dashboard](docs/dashboard.png)
 ![Dashboard](docs/dashboard_bottom.png)
 
