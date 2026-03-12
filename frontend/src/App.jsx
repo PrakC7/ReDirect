@@ -40,6 +40,8 @@ function Landing({ onStart }) {
   );
 }
 
+import { createEmergencyRoute } from "./api";
+
 function RequestForm({ onSubmit }) {
   const [vehicleType, setVehicleType] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -72,7 +74,7 @@ function RequestForm({ onSubmit }) {
     return "";
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setTouched({
       vehicleType: true,
@@ -89,18 +91,23 @@ function RequestForm({ onSubmit }) {
     const err = validate();
     setError(err);
     if (!err) {
-      onSubmit({
-        vehicleType,
-        purpose: purpose === "Other" ? otherPurpose : purpose,
-        from,
-        to,
-        backTo,
-        vehicleIdType,
-        vehicleId,
-        priority,
-        travelTime,
-        routeDesc,
-      });
+      try {
+        await createEmergencyRoute({
+          vehicleType,
+          purpose: purpose === "Other" ? otherPurpose : purpose,
+          from,
+          to,
+          backTo,
+          vehicleIdType,
+          vehicleId,
+          priority,
+          travelTime,
+          routeDesc,
+        });
+        onSubmit();
+      } catch (e) {
+        setError("Failed to submit emergency request. Please try again.");
+      }
     }
   }
 

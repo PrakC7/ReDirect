@@ -13,6 +13,23 @@ export async function fetchStatus() {
 }
 
 export async function createEmergencyRoute(data) {
-  // Simulate success for demo
-  return Promise.resolve({ status: 'received' });
+  // Map frontend data to backend EmergencyVehicle model
+  const payload = {
+    id: Date.now(),
+    type: data.vehicleType,
+    location: data.from,
+    timestamp: new Date().toISOString(),
+    // Optionally, add more fields if backend expects them
+  };
+  const res = await fetch(`${API_BASE}/emergency/alert`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to submit emergency request');
+  }
+  return res.json();
 }
