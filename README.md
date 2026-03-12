@@ -6,7 +6,7 @@ The system combines intelligent congestion prediction, adaptive signal control, 
 
 ---
 
-# System Workflow
+# System Workflow(Case of Emergency Vehicles)
 
 ![System Workflow](docs/system_flow.png)
 
