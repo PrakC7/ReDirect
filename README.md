@@ -148,7 +148,7 @@ To keep the packet both compact and more stable:
 
 - each direction can keep up to `7` extra vehicles separately on top of the `10s` count code
 - when the extra count reaches `8`, it rolls into the next count code and the separate remainder resets
-- for speed protection, full bucket codes use a safer divisor assumption such as `10 -> 8`, `20 -> 18`, and `30 -> 28`
+- vehicle speed is averaged locally from the actual detections before upload, so speed is not distorted by the compressed count bucket
 
 That means a direction with `17` vehicles can be sent as:
 
@@ -160,7 +160,9 @@ If one more vehicle is added in the same direction, it becomes:
 - count code `2`
 - separate vehicles `0`
 
-This helps the system react quickly while still preserving more usable flow information than a plain rounded count.
+For practical control-room use, full-bucket values are decoded conservatively at the server. So a bucket like `20` is treated as roughly `19` vehicles unless there is a separate remainder attached. This avoids over-prioritising a junction just because the packet was compressed.
+
+This helps the system react quickly while still preserving more usable flow information than a plain rounded count, which is important on mixed Indian traffic corridors where signals need stable but realistic pressure estimates.
 
 This preprocessing can run:
 

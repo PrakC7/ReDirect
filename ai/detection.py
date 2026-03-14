@@ -40,20 +40,35 @@ def _encode_directional_vehicle_count(
         vehicle_count_code += 1
         separate_vehicle_count = 0
 
-    estimated_vehicle_count = vehicle_count_code * count_unit_size
-    reported_vehicle_count = estimated_vehicle_count + separate_vehicle_count
-    speed_average_divisor = (
-        max(estimated_vehicle_count - 2, 1)
-        if estimated_vehicle_count and separate_vehicle_count == 0
-        else max(reported_vehicle_count, 1)
+    compressed_vehicle_count_upper_bound = vehicle_count_code * count_unit_size
+    if compressed_vehicle_count_upper_bound and separate_vehicle_count == 0:
+        decoded_vehicle_count_min = max(
+            compressed_vehicle_count_upper_bound - 2,
+            1,
+        )
+        decoded_vehicle_count_estimate = max(
+            compressed_vehicle_count_upper_bound - 1,
+            1,
+        )
+    else:
+        decoded_vehicle_count_min = (
+            compressed_vehicle_count_upper_bound + separate_vehicle_count
+        )
+        decoded_vehicle_count_estimate = decoded_vehicle_count_min
+
+    decoded_vehicle_count_max = (
+        compressed_vehicle_count_upper_bound
+        if compressed_vehicle_count_upper_bound and separate_vehicle_count == 0
+        else decoded_vehicle_count_estimate
     )
 
     return {
         "vehicle_count_code": vehicle_count_code,
         "separate_vehicle_count": separate_vehicle_count,
-        "estimated_vehicle_count": estimated_vehicle_count,
-        "reported_vehicle_count": reported_vehicle_count,
-        "speed_average_divisor": speed_average_divisor,
+        "compressed_vehicle_count_upper_bound": compressed_vehicle_count_upper_bound,
+        "decoded_vehicle_count_min": decoded_vehicle_count_min,
+        "decoded_vehicle_count_estimate": decoded_vehicle_count_estimate,
+        "decoded_vehicle_count_max": decoded_vehicle_count_max,
     }
 
 
@@ -82,7 +97,7 @@ def build_directional_count_codes(
             count_unit_size,
         )
         average_speed_kph = (
-            round(sum(speed_samples) / encoding["speed_average_divisor"], 1)
+            round(sum(speed_samples) / len(speed_samples), 1)
             if speed_samples
             else None
         )
