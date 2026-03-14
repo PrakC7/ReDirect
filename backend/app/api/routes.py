@@ -14,7 +14,12 @@ from app.schemas import (
 )
 from app.services.density import calculate_density_score, get_density_status
 from app.services.emergency import EmergencyRequestStore, build_corridor
-from app.services.optimization import build_signal_plan
+from app.services.intersection_priority import (
+    PRIORITY_RADIUS_KM,
+    build_intersection_priority_plan,
+    resolve_anchor_intersection,
+)
+from app.services.optimization import build_signal_plan, calculate_priority_score
 
 router = APIRouter()
 emergency_store = EmergencyRequestStore(settings.emergency_ttl_seconds)
@@ -24,6 +29,8 @@ SAMPLE_INTERSECTIONS = [
         id=101,
         name="AIIMS Ring Road",
         zone="Central",
+        latitude=28.5674,
+        longitude=77.2106,
         lane_count=4,
         road_width_m=15.0,
         road_priority_weight=0.45,
@@ -35,6 +42,8 @@ SAMPLE_INTERSECTIONS = [
         id=102,
         name="Lajpat Nagar Flyover",
         zone="South East",
+        latitude=28.5679,
+        longitude=77.2432,
         lane_count=3,
         road_width_m=13.5,
         road_priority_weight=0.32,
@@ -46,6 +55,8 @@ SAMPLE_INTERSECTIONS = [
         id=103,
         name="ITO Junction",
         zone="Central",
+        latitude=28.6289,
+        longitude=77.2411,
         lane_count=5,
         road_width_m=16.5,
         road_priority_weight=0.55,
@@ -57,12 +68,27 @@ SAMPLE_INTERSECTIONS = [
         id=104,
         name="Kashmere Gate ISBT",
         zone="North",
+        latitude=28.6675,
+        longitude=77.2278,
         lane_count=4,
         road_width_m=14.0,
         road_priority_weight=0.41,
         historical_congestion=0.74,
         live_vehicle_count=39,
         signal_group="East-West",
+    ),
+    Intersection(
+        id=105,
+        name="Manesar Toll Gate",
+        zone="South West",
+        latitude=28.3649,
+        longitude=76.9424,
+        lane_count=4,
+        road_width_m=15.5,
+        road_priority_weight=0.37,
+        historical_congestion=0.69,
+        live_vehicle_count=36,
+        signal_group="North-South",
     ),
 ]
 
@@ -85,6 +111,19 @@ def _build_network_state() -> list[tuple[Intersection, float, dict[str, int]]]:
         state.append((live_intersection, density_score, vehicle_distribution))
 
     return state
+
+
+def _build_priority_score_lookup(
+    state: list[tuple[Intersection, float, dict[str, int]]],
+) -> dict[int, float]:
+    return {
+        intersection.id: calculate_priority_score(
+            density_score,
+            intersection.road_priority_weight,
+            distribution,
+        )
+        for intersection, density_score, distribution in state
+    }
 
 
 def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
@@ -118,13 +157,24 @@ def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
     return snapshots
 
 
-def _build_corridor_candidates() -> list[Intersection]:
-    ranked_intersections = _build_intersection_snapshots()
-    intersection_lookup = {intersection.id: intersection for intersection in SAMPLE_INTERSECTIONS}
-    return [
-        intersection_lookup[snapshot.id]
-        for snapshot in ranked_intersections[:3]
-    ]
+def _build_corridor_plan_context(
+    origin: str,
+    destination: str,
+) -> tuple[list[Intersection], list]:
+    state = _build_network_state()
+    priority_scores = _build_priority_score_lookup(state)
+    live_intersections = [intersection for intersection, _, _ in state]
+    anchor = resolve_anchor_intersection(
+        f"{origin} {destination}",
+        live_intersections,
+    )
+    ranked_intersections, priority_steps = build_intersection_priority_plan(
+        anchor,
+        live_intersections,
+        priority_scores,
+        PRIORITY_RADIUS_KM,
+    )
+    return ranked_intersections[:3], priority_steps
 
 
 @router.get("/health")
@@ -149,6 +199,7 @@ def get_dashboard_snapshot() -> DashboardSnapshot:
         next_refresh_seconds=settings.signal_update_interval,
         active_emergency_count=len(active_requests),
         average_clearance_gain_minutes=average_clearance_gain,
+        priority_radius_km=int(PRIORITY_RADIUS_KM),
         intersections=_build_intersection_snapshots(),
         active_requests=active_requests,
     )
@@ -162,8 +213,24 @@ def get_dashboard_snapshot() -> DashboardSnapshot:
 def create_emergency_request(
     payload: EmergencyRequestCreate,
 ) -> EmergencyRequestRecord:
-    corridor = build_corridor(_build_corridor_candidates(), payload.priority)
-    return emergency_store.create(payload, corridor)
+    ranked_intersections, priority_steps = _build_corridor_plan_context(
+        payload.origin,
+        payload.destination,
+    )
+    priority_lookup = {
+        step.intersection_id: step for step in priority_steps
+    }
+    corridor = build_corridor(
+        ranked_intersections,
+        payload.priority,
+        intersection_priorities=priority_lookup,
+    )
+    return emergency_store.create(
+        payload,
+        corridor,
+        int(PRIORITY_RADIUS_KM),
+        priority_steps,
+    )
 
 
 @router.get("/emergency/requests", response_model=list[EmergencyRequestRecord])
@@ -200,5 +267,22 @@ def create_legacy_alert(alert: LegacyEmergencyAlert) -> EmergencyRequestRecord:
         estimated_travel_minutes=12,
         route_notes="Generated from the legacy emergency alert endpoint.",
     )
-    corridor = build_corridor(_build_corridor_candidates(), payload.priority, alert.timestamp)
-    return emergency_store.create(payload, corridor)
+    ranked_intersections, priority_steps = _build_corridor_plan_context(
+        payload.origin,
+        payload.destination,
+    )
+    priority_lookup = {
+        step.intersection_id: step for step in priority_steps
+    }
+    corridor = build_corridor(
+        ranked_intersections,
+        payload.priority,
+        alert.timestamp,
+        priority_lookup,
+    )
+    return emergency_store.create(
+        payload,
+        corridor,
+        int(PRIORITY_RADIUS_KM),
+        priority_steps,
+    )

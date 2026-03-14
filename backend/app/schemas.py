@@ -19,11 +19,20 @@ class IntersectionSnapshot(BaseModel):
     status: str
 
 
+class IntersectionPriorityStep(BaseModel):
+    intersection_id: int
+    intersection_name: str
+    distance_km: float | None
+    priority_phase: Literal["radius-first", "remaining"]
+
+
 class CorridorStep(BaseModel):
     intersection_id: int
     intersection_name: str
     green_from: datetime
     green_to: datetime
+    distance_km: float | None = None
+    priority_phase: Literal["radius-first", "remaining"] | None = None
 
 
 class EmergencyRequestCreate(BaseModel):
@@ -57,7 +66,9 @@ class EmergencyRequestRecord(EmergencyRequestCreate):
     submitted_at: datetime
     suggested_time_saved_minutes: int
     corridor_window_seconds: int
+    priority_radius_km: int
     corridor: list[CorridorStep]
+    priority_intersections: list[IntersectionPriorityStep]
 
 
 class DashboardSnapshot(BaseModel):
@@ -65,6 +76,7 @@ class DashboardSnapshot(BaseModel):
     next_refresh_seconds: int
     active_emergency_count: int
     average_clearance_gain_minutes: int
+    priority_radius_km: int
     intersections: list[IntersectionSnapshot]
     active_requests: list[ActiveEmergencySummary]
 

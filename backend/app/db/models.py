@@ -7,6 +7,8 @@ class Intersection:
     id: int
     name: str
     zone: str
+    latitude: float
+    longitude: float
     lane_count: int
     road_width_m: float
     road_priority_weight: float

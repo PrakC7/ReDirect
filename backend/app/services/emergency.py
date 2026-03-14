@@ -10,6 +10,7 @@ from app.schemas import (
     CorridorStep,
     EmergencyRequestCreate,
     EmergencyRequestRecord,
+    IntersectionPriorityStep,
 )
 
 PRIORITY_TO_TIME_SAVED = {"Critical": 8, "High": 5, "Medium": 3}
@@ -21,18 +22,26 @@ def build_corridor(
     intersections: list[Intersection],
     priority: str,
     start_time: datetime | None = None,
+    intersection_priorities: dict[int, IntersectionPriorityStep] | None = None,
 ) -> list[CorridorStep]:
     slot = start_time or datetime.utcnow()
     window_seconds = PRIORITY_TO_WINDOW_SECONDS[priority]
     corridor: list[CorridorStep] = []
 
     for intersection in intersections:
+        priority_step = (
+            intersection_priorities.get(intersection.id)
+            if intersection_priorities
+            else None
+        )
         corridor.append(
             CorridorStep(
                 intersection_id=intersection.id,
                 intersection_name=intersection.name,
                 green_from=slot,
                 green_to=slot + timedelta(seconds=window_seconds),
+                distance_km=priority_step.distance_km if priority_step else None,
+                priority_phase=priority_step.priority_phase if priority_step else None,
             )
         )
         slot += timedelta(seconds=window_seconds)
@@ -47,7 +56,11 @@ class EmergencyRequestStore:
         self._lock = Lock()
 
     def create(
-        self, payload: EmergencyRequestCreate, corridor: list[CorridorStep]
+        self,
+        payload: EmergencyRequestCreate,
+        corridor: list[CorridorStep],
+        priority_radius_km: int,
+        priority_intersections: list[IntersectionPriorityStep],
     ) -> EmergencyRequestRecord:
         submitted_at = datetime.utcnow()
         window_seconds = PRIORITY_TO_WINDOW_SECONDS[payload.priority]
@@ -57,7 +70,9 @@ class EmergencyRequestStore:
             submitted_at=submitted_at,
             suggested_time_saved_minutes=PRIORITY_TO_TIME_SAVED[payload.priority],
             corridor_window_seconds=window_seconds,
+            priority_radius_km=priority_radius_km,
             corridor=corridor,
+            priority_intersections=priority_intersections,
             **payload.model_dump(),
         )
 
