@@ -116,29 +116,18 @@ This is intentionally optional. The core project still works with lightweight tr
 
 The project is built around lightweight vehicle metadata rather than heavy full-video processing, making it easier to imagine edge-device deployment.
 
-## Problems And Solutions
+## Real-World Challenges ReDirect Solves
 
-### Problem: Full Video Streaming Needs Good Network Connectivity
+### Low-Connectivity Traffic Corridors
 
-If every traffic signal sends continuous video to the control room, the system needs:
-
-- higher bandwidth
-- stronger and more stable internet
-- more backend compute for video processing
-- higher storage and transmission cost
-
-That becomes difficult in locations with weak or inconsistent connectivity.
-
-### Solution: Add A Small Roadside Counting Device
-
-ReDirect can use an additional roadside device with local programming near the intersection. That device can:
+Many city roads and junctions operate with limited or inconsistent connectivity. ReDirect addresses this smoothly by using an additional roadside device with local programming near the intersection. That device can:
 
 - count vehicles locally
 - estimate directional counts
 - detect emergency presence from local inference
 - send only compact numeric values to the backend
 
-Instead of sending full video, it can send packets such as:
+Instead of depending on heavy data transfer, it can send packets such as:
 
 - total vehicle count
 - occupancy index
@@ -147,16 +136,16 @@ Instead of sending full video, it can send packets such as:
 - emergency flag
 - average speed estimate
 
-This makes the system faster and more practical in low-internet areas because only lightweight numeric telemetry is transmitted.
+This keeps ReDirect fast and practical in low-internet areas because only lightweight numeric telemetry is transmitted.
 
-### Selective Camera Strategy
+### Smart Use Of Existing Infrastructure
 
-The project now follows a practical mixed approach:
+ReDirect also fits well into mixed city infrastructure:
 
 - most intersections can run on lightweight counting devices and numeric summaries
 - selected intersections with high-quality cameras can additionally support optional wrong-way enforcement and saved vehicle records
 
-This keeps the solution affordable while still allowing stronger enforcement at important locations where better hardware is already installed.
+This helps the project stay efficient and affordable while still allowing stronger enforcement at important locations where better hardware is already installed.
 
 ## Optimisation Logic
 
