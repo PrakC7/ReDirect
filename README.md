@@ -1,107 +1,126 @@
 # ReDirect
 
-ReDirect is an AI-driven traffic optimization prototype designed to help traffic control centers create faster emergency corridors while maintaining smooth traffic flow across major intersections.
+ReDirect is an AI-assisted traffic optimisation prototype for city control rooms. It is designed to reduce day-to-day congestion across important intersections and also support faster emergency movement for ambulances, police, and fire services.
 
-The system combines intelligent congestion prediction, adaptive signal control, and emergency vehicle priority routing to improve response times for ambulances, police, and fire services.
+The current version keeps the same project concept, but improves how decisions are made:
 
----
+- nearby intersections are checked first within a `20 km` radius
+- vehicle motion direction is used to decide whether traffic is actually moving toward a target area
+- normal signal timing uses the same logic as emergency routing
+- emergency corridors are generated on top of the live network optimisation instead of using a separate isolated flow
 
-# System Workflow(Case of Emergency Vehicles)
+## What Is New In This Version
+
+- Direction-aware traffic optimisation for the regular dashboard signal plan
+- Incoming pressure scoring based on nearby intersections and inbound vehicle flow
+- Radius-first prioritisation so close intersections are handled before the remaining network
+- Direction-aware emergency corridor sequencing
+- Updated dashboard preview showing inbound pressure and flow direction context
+- Cleaner repository structure and preview-ready FastAPI + React demo
+
+## Why This Matters
+
+Most traffic systems only react to queue length at one junction. ReDirect now looks one step wider:
+
+1. It checks nearby intersections.
+2. It estimates whether vehicles are actually feeding into a target junction.
+3. It prioritises intersections where traffic is both close and moving toward that area.
+4. It then adjusts signal recommendations for normal traffic and emergency requests.
+
+This makes the prototype closer to a practical control-room workflow instead of a corridor-only demo.
+
+## System Workflow
+
+### General Traffic Optimisation
+
+1. The backend simulates live vehicle counts for each intersection.
+2. Density scoring is calculated from lane count, road width, and congestion history.
+3. Nearby intersections inside the `20 km` radius are checked.
+4. Vehicle motion direction is used to estimate inbound traffic pressure.
+5. Signal priority and green timings are updated using both density and directional flow.
+
+### Emergency Movement Workflow
+
+1. An operator submits an emergency request.
+2. The backend resolves the closest relevant intersection context from the route.
+3. Intersections within the nearby radius are prioritised first.
+4. Their vehicle flow direction is checked to see whether traffic is moving into the corridor zone.
+5. A staged green corridor is generated, followed by the remaining intersections.
+
+## Visual Overview
+
+### System Flow
 
 ![System Workflow](docs/system_flow.png)
 
-The workflow demonstrates how emergency traffic clearance is handled:
-
-1. Emergency vehicle submits a priority request.
-2. The backend analyzes traffic density and congestion levels.
-3. AI-based optimization calculates the fastest corridor.
-4. Traffic signals along the route receive priority instructions.
-5. The control dashboard confirms the emergency corridor activation.
-
----
-
-# System Architecture
+### System Architecture
 
 ![System Architecture](docs/architecture.png)
 
-ReDirect follows a lightweight modular architecture:
-
-- **Edge Layer**  
-  Processes vehicle metadata from cameras or sensors.
-
-- **AI Layer**  
-  Performs vehicle detection, density scoring, and congestion prediction.
-
-- **Backend Layer (FastAPI)**  
-  Handles emergency requests, signal optimization, and API services.
-
-- **Frontend Layer (React Portal)**  
-  Provides a dashboard for operators to monitor traffic and manage emergency requests.
-
----
-
-# Dashboard Preview
+### Dashboard Preview
 
 ![Dashboard](docs/main_dashboard.png)
 ![Dashboard](docs/dashboard.png)
 ![Dashboard](docs/dashboard_bottom.png)
 
-The operator portal provides:
+The dashboard now highlights:
 
-- Live signal-priority cards
-- Emergency request submission form
-- Corridor confirmation timeline
-- Real-time traffic pressure indicators
+- live signal-priority cards
+- incoming traffic pressure per intersection
+- dominant inbound direction from nearby intersections
+- emergency request submission and confirmation flow
+- corridor sequence reasoning with radius-first and movement-alignment details
 
----
+## Core Features
 
-# Core Features
+### Network-Wide Traffic Optimisation
 
-### Emergency Priority Routing
-Emergency vehicles can request traffic clearance through a dedicated portal.  
-The system generates optimized signal corridors to ensure faster movement.
+ReDirect continuously ranks intersections using:
 
-### AI-Based Traffic Optimization
-ReDirect simulates congestion prediction and traffic density analysis to recommend adaptive signal timings.
+- density score
+- road importance
+- public transport weight
+- nearby inbound traffic pressure
+- vehicle movement direction
 
-### Emergency Traffic API
-A structured backend API provides traffic snapshots and emergency request tracking for dashboard integration.
+### Direction-Aware Decision Logic
 
-### Edge-Friendly Processing
-Instead of heavy video pipelines, the system processes lightweight vehicle metadata from edge devices.
+The system does not treat all nearby vehicles equally. It checks whether detected traffic is:
 
----
+- moving toward the target area
+- mostly cross traffic
+- moving away from the target area
 
-# Improvements in This Version
+That makes prioritisation more realistic for both daily traffic balancing and emergency routing.
 
-### Frontend
+### Emergency Corridor Planning
 
-- redesigned React operator portal
-- signal priority cards
-- emergency request workflow
-- built-in preview route
+Emergency requests still remain a core part of the project. The difference is that corridor generation now reuses the same live optimisation model used by the dashboard.
 
-### Backend
+### Edge-Friendly Design
 
-- structured request schemas
-- dashboard snapshot endpoint
-- emergency request lifecycle tracking
-- automatic TTL cleanup
-- environment-based API configuration
+The project is built around lightweight vehicle metadata rather than heavy full-video processing, making it easier to imagine edge-device deployment.
 
-### Repository Optimization
+## Optimisation Logic
 
-Unnecessary files are no longer tracked:
+### Inputs Used
 
-- `.env`
-- local databases
-- caches
-- `node_modules`
-- generated build files
+- live vehicle count
+- lane count
+- road width
+- historical congestion
+- road priority weight
+- movement profile by direction
 
----
+### Decision Layers
 
-# Project Structure
+1. `density.py` computes congestion pressure.
+2. `network_flow.py` estimates inbound pressure from nearby intersections.
+3. `optimization.py` combines density and directional pressure into signal priority.
+4. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
+5. `emergency.py` turns the ranked intersections into staged green windows.
+
+## Project Structure
 
 ```text
 .
@@ -118,6 +137,8 @@ Unnecessary files are no longer tracked:
 |   |   |-- services
 |   |   |   |-- density.py
 |   |   |   |-- emergency.py
+|   |   |   |-- intersection_priority.py
+|   |   |   |-- network_flow.py
 |   |   |   `-- optimization.py
 |   |   |-- main.py
 |   |   `-- schemas.py
@@ -139,11 +160,9 @@ Unnecessary files are no longer tracked:
 `-- README.md
 ```
 
----
+## Running The Project Locally
 
-# Running the Project Locally
-
-## Backend
+### Backend
 
 ```bash
 cd backend
@@ -151,18 +170,16 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Backend runs at:
+Backend:
 
+```text
+http://127.0.0.1:8000
 ```
-http://localhost:8000
-```
 
----
-
-## Frontend
+### Frontend Dev Server
 
 ```bash
 cd frontend
@@ -170,31 +187,27 @@ npm install
 npm run dev
 ```
 
-Frontend runs at:
+Frontend:
 
-```
-http://localhost:5173
-```
-
----
-
-# Preview and API Docs
-
-Preview served by backend:
-
-```
-http://localhost:8000/preview
+```text
+http://127.0.0.1:5173
 ```
 
-API documentation:
+### Built-In Preview
 
+The backend can also serve the built frontend preview directly:
+
+```text
+http://127.0.0.1:8000/preview
 ```
-http://localhost:8000/docs
+
+### API Docs
+
+```text
+http://127.0.0.1:8000/docs
 ```
 
----
-
-# Core API Endpoints
+## Core API Endpoints
 
 - `GET /health`
 - `GET /preview`
@@ -204,17 +217,14 @@ http://localhost:8000/docs
 - `GET /api/v1/gov/emergency/active`
 - `POST /api/v1/emergency/alert`
 
----
+## Current Prototype Notes
 
-# Prototype Notes
+- The backend currently uses in-memory storage for active emergency requests.
+- Live traffic values are simulated for demo purposes.
+- Directional movement is represented using structured motion profiles in the sample network.
+- The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.
 
-- The backend uses an in-memory store to keep the prototype lightweight.
-- Signal recommendations are based on simulated vehicle counts and density scoring.
-- AI and edge modules demonstrate how traffic metadata can be summarized before reaching the control system.
-
----
-
-# Documentation
+## Documentation
 
 - [Government evaluation notes](docs/government_evaluation.md)
 - [Project proposal](docs/samadhan_saathi_proposal.md)
