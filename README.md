@@ -116,6 +116,48 @@ This is intentionally optional. The core project still works with lightweight tr
 
 The project is built around lightweight vehicle metadata rather than heavy full-video processing, making it easier to imagine edge-device deployment.
 
+## Problems And Solutions
+
+### Problem: Full Video Streaming Needs Good Network Connectivity
+
+If every traffic signal sends continuous video to the control room, the system needs:
+
+- higher bandwidth
+- stronger and more stable internet
+- more backend compute for video processing
+- higher storage and transmission cost
+
+That becomes difficult in locations with weak or inconsistent connectivity.
+
+### Solution: Add A Small Roadside Counting Device
+
+ReDirect can use an additional roadside device with local programming near the intersection. That device can:
+
+- count vehicles locally
+- estimate directional counts
+- detect emergency presence from local inference
+- send only compact numeric values to the backend
+
+Instead of sending full video, it can send packets such as:
+
+- total vehicle count
+- occupancy index
+- directional vehicle counts
+- wrong-way count where optional enforcement is available
+- emergency flag
+- average speed estimate
+
+This makes the system faster and more practical in low-internet areas because only lightweight numeric telemetry is transmitted.
+
+### Selective Camera Strategy
+
+The project now follows a practical mixed approach:
+
+- most intersections can run on lightweight counting devices and numeric summaries
+- selected intersections with high-quality cameras can additionally support optional wrong-way enforcement and saved vehicle records
+
+This keeps the solution affordable while still allowing stronger enforcement at important locations where better hardware is already installed.
+
 ## Optimisation Logic
 
 ### Inputs Used
@@ -127,15 +169,17 @@ The project is built around lightweight vehicle metadata rather than heavy full-
 - road priority weight
 - movement profile by direction
 - optional high-quality camera evidence at selected locations
+- low-bandwidth numeric telemetry from roadside counting devices
 
 ### Decision Layers
 
 1. `density.py` computes congestion pressure.
 2. `network_flow.py` estimates inbound pressure from nearby intersections.
 3. `optimization.py` combines density and directional pressure into signal priority.
-4. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
-5. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
-6. `emergency.py` turns the ranked intersections into staged green windows.
+4. `edge_processor.py` shows how roadside devices can send numeric packets in low-connectivity areas.
+5. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
+6. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
+7. `emergency.py` turns the ranked intersections into staged green windows.
 
 ## Project Structure
 
@@ -242,6 +286,7 @@ http://127.0.0.1:8000/docs
 - Live traffic values are simulated for demo purposes.
 - Directional movement is represented using structured motion profiles in the sample network.
 - Wrong-way violation records are shown as an optional add-on only for selected intersections with existing high-quality cameras.
+- The edge module includes a low-bandwidth packet example for roadside devices that send numeric traffic summaries instead of full video streams.
 - The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.
 
 ## Documentation
