@@ -124,6 +124,7 @@ Many city roads and junctions operate with limited or inconsistent connectivity.
 
 - count vehicles locally
 - estimate directional counts
+- combine those counts into compact count codes before upload
 - detect emergency presence from local inference
 - send only compact numeric values to the backend
 
@@ -137,6 +138,18 @@ Instead of depending on heavy data transfer, it can send packets such as:
 - average speed estimate
 
 This keeps ReDirect fast and practical in low-internet areas because only lightweight numeric telemetry is transmitted.
+
+ReDirect can also preprocess grouped traffic summaries in a very compact form. For example:
+
+- count code `1` can represent about `10` northbound vehicles with an average speed near `40 km/h`
+- count code `2` can represent about `20` southbound vehicles with an average speed near `30 km/h`
+
+This preprocessing can run:
+
+- on the external roadside device attached to the camera
+- or directly inside the detection pipeline before the optimisation step
+
+That means the server can receive already-combined directional flow summaries and respond faster.
 
 ### Smart Use Of Existing Infrastructure
 
@@ -163,12 +176,13 @@ This helps the project stay efficient and affordable while still allowing strong
 ### Decision Layers
 
 1. `density.py` computes congestion pressure.
-2. `network_flow.py` estimates inbound pressure from nearby intersections.
-3. `optimization.py` combines density and directional pressure into signal priority.
-4. `edge_processor.py` shows how roadside devices can send numeric packets in low-connectivity areas.
-5. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
-6. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
-7. `emergency.py` turns the ranked intersections into staged green windows.
+2. `ai/detection.py` can preprocess raw detections into directional count codes and average-speed summaries.
+3. `network_flow.py` estimates inbound pressure from nearby intersections.
+4. `optimization.py` combines density and directional pressure into signal priority.
+5. `edge_processor.py` shows how roadside devices can send numeric packets and directional count-code packets in low-connectivity areas.
+6. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
+7. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
+8. `emergency.py` turns the ranked intersections into staged green windows.
 
 ## Project Structure
 
@@ -275,7 +289,7 @@ http://127.0.0.1:8000/docs
 - Live traffic values are simulated for demo purposes.
 - Directional movement is represented using structured motion profiles in the sample network.
 - Wrong-way violation records are shown as an optional add-on only for selected intersections with existing high-quality cameras.
-- The edge module includes a low-bandwidth packet example for roadside devices that send numeric traffic summaries instead of full video streams.
+- The edge module includes low-bandwidth packet examples for roadside devices that send numeric traffic summaries and grouped directional count codes instead of full video streams.
 - The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.
 
 ## Documentation
