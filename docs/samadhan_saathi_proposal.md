@@ -99,7 +99,6 @@ ReDirect can work by reusing the small local servers that already store area cam
 - directional counts
 - occupancy index
 - average speed estimate
-- wrong-way count where optional enforcement is enabled
 
 This allows deployment even in corridors where continuous heavy video transfer is undesirable.
 
@@ -189,7 +188,7 @@ The project is intentionally designed to be cost-aware:
 - support for lightweight numeric telemetry from small local camera servers
 - optional premium enforcement only where suitable cameras already exist
 
-Because these small local servers are already used for storing area camera data, ReDirect can reuse them for five-minute traffic aggregation without introducing a significant extra hardware cost.
+Because these small local servers are already used for storing area camera data, ReDirect can reuse them for two-minute traffic aggregation without introducing a significant extra hardware cost. Wrong-way violations can stay at the local control-room layer for direct enforcement and do not need to be forwarded to the main traffic optimiser.
 
 This makes the project more realistic for government pilots and gradual scale-up.
 

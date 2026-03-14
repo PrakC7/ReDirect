@@ -198,7 +198,7 @@ def create_area_small_server_state(
     area_id: str,
     controlled_intersection_id: int,
     generated_at: datetime | None = None,
-    window_minutes: int = 5,
+    window_minutes: int = 2,
     priority_radius_km: float = 20.0,
 ) -> AreaSmallServerState:
     snapshot_time = generated_at or datetime.utcnow()
@@ -367,7 +367,7 @@ def build_area_small_server_snapshot(
     area_id: str,
     controlled_intersection_id: int,
     generated_at: datetime | None = None,
-    window_minutes: int = 5,
+    window_minutes: int = 2,
     priority_radius_km: float = 20.0,
 ) -> dict[str, object]:
     snapshot_time = generated_at or datetime.utcnow()
@@ -401,6 +401,7 @@ def build_optimizer_upload_from_area_snapshot(
     snapshot: dict[str, object],
     sequence_id: int,
     occupancy_index: float | None = None,
+    include_wrong_way_upstream: bool = False,
 ) -> dict[str, int]:
     decimal_directional_vehicle_count = {
         str(direction): float(count)
@@ -436,7 +437,11 @@ def build_optimizer_upload_from_area_snapshot(
         emergency_detected=bool(snapshot.get("emergency_detected", False)),
         captured_at=datetime.fromisoformat(str(snapshot["generated_at"])),
         directional_vehicle_count=directional_vehicle_count,
-        wrong_way_count=int(snapshot.get("wrong_way_count", 0)),
+        wrong_way_count=(
+            int(snapshot.get("wrong_way_count", 0))
+            if include_wrong_way_upstream
+            else 0
+        ),
         average_speed_by_direction=average_speed_by_direction,
         average_speed_kph=average_speed_kph,
     )

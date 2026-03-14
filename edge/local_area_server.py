@@ -46,6 +46,7 @@ class LocalAreaOptimizerUpload:
     sequence_id: int
     local_snapshot: dict[str, object]
     optimizer_packet: dict[str, int]
+    local_wrong_way_count: int
     pending_processed_record_count: int
 
     def as_dict(self) -> dict[str, object]:
@@ -56,7 +57,7 @@ class LocalAreaOptimizerUpload:
 class LocalAreaServer:
     area_id: str
     controlled_intersection_id: int
-    window_minutes: int = 5
+    window_minutes: int = 2
     priority_radius_km: float = 20.0
     pending_processed_records: list[ProcessedTelemetryRecord] = field(
         default_factory=list
@@ -146,8 +147,28 @@ class LocalAreaServer:
             sequence_id=sequence_id,
             local_snapshot=local_snapshot,
             optimizer_packet=optimizer_packet,
+            local_wrong_way_count=int(local_snapshot.get("wrong_way_count", 0)),
             pending_processed_record_count=len(self.pending_processed_records),
         )
+
+    def build_local_control_room_summary(self) -> dict[str, object]:
+        local_snapshot = snapshot_from_area_small_server_state(self._state)
+        return {
+            "area_id": self.area_id,
+            "controlled_intersection_id": self.controlled_intersection_id,
+            "window_minutes": self.window_minutes,
+            "generated_at": local_snapshot["generated_at"],
+            "pending_processed_record_count": len(self.pending_processed_records),
+            "local_wrong_way_count": int(local_snapshot.get("wrong_way_count", 0)),
+            "local_wrong_way_note": (
+                "Wrong-way movement is handled at the local control room only and "
+                "is not forwarded to the main traffic optimiser."
+            ),
+            "decimal_directional_vehicle_count": local_snapshot.get(
+                "decimal_directional_vehicle_count",
+                {},
+            ),
+        }
 
     def acknowledge_send(
         self,
@@ -164,4 +185,3 @@ class LocalAreaServer:
             "raw_recordings_deleted": 0,
             "raw_recordings_managed_externally": True,
         }
-
