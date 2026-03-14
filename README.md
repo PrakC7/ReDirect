@@ -61,10 +61,6 @@ This makes the prototype closer to a practical control-room workflow instead of 
 
 ![System Workflow](docs/system_flow.png)
 
-### System Architecture
-
-![System Architecture](docs/architecture.png)
-
 ### Dashboard Preview
 
 ![Dashboard](docs/main_dashboard.png)
