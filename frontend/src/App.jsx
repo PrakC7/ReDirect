@@ -22,6 +22,19 @@ const PURPOSES = [
 
 const PRIORITIES = ["Critical", "High", "Medium"];
 const VEHICLE_ID_TYPES = ["Vehicle Number", "Unit ID", "Department ID"];
+const DIRECTION_LABELS = {
+  northbound: "Northbound",
+  southbound: "Southbound",
+  eastbound: "Eastbound",
+  westbound: "Westbound",
+};
+const MOVEMENT_ALIGNMENT_LABELS = {
+  "at-zone": "Already at the target zone",
+  "towards-zone": "Inbound traffic toward the target zone",
+  "cross-traffic": "Mostly cross-traffic around the zone",
+  "away-from-zone": "Mostly moving away from the target zone",
+  undetermined: "Direction still being inferred",
+};
 
 const INITIAL_FORM = {
   requesterName: "",
@@ -51,6 +64,30 @@ function formatTimestamp(value) {
   }).format(new Date(value));
 }
 
+function formatDirection(direction) {
+  if (!direction) {
+    return "Mixed flow";
+  }
+
+  return DIRECTION_LABELS[direction] || direction;
+}
+
+function formatMovementAlignment(alignment) {
+  if (!alignment) {
+    return "Direction check pending";
+  }
+
+  return MOVEMENT_ALIGNMENT_LABELS[alignment] || alignment;
+}
+
+function formatShare(value) {
+  if (value == null) {
+    return "--";
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
 function MetricCard({ label, value, detail }) {
   return (
     <article className="metric-card">
@@ -69,15 +106,16 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
       <div className="eyebrow">Municipal traffic prototype</div>
       <h1>ReDirect</h1>
       <p className="hero-copy">
-        An AI-assisted emergency traffic priority portal that helps city control
-        rooms create faster green corridors while keeping live junction demand
-        visible.
+        An AI-assisted traffic optimisation portal that helps city control rooms
+        reduce daily junction pressure and create faster green corridors when an
+        emergency movement is active.
       </p>
 
       <div className="chip-row">
         <span className="chip">Adaptive signal timing</span>
+        <span className="chip">Direction-aware flow screening</span>
         <span className="chip">Emergency corridor requests</span>
-        <span className="chip">Edge-ready traffic metadata</span>
+        <span className="chip">20 km nearby junction scan</span>
       </div>
 
       <div className="metric-grid">
@@ -112,7 +150,7 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
       <div className="section-head">
         <h2>Current signal priorities</h2>
         <span className="subtle-note">
-          Ranked by density score and corridor importance
+          Ranked by density, incoming flow direction, and corridor importance
         </span>
       </div>
 
@@ -127,6 +165,11 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
                 <p>
                   {intersection.zone} zone · {intersection.signal_group}
                 </p>
+                <p className="flow-note">
+                  {intersection.primary_inbound_direction
+                    ? `${formatDirection(intersection.primary_inbound_direction)} inflow drives ${formatShare(intersection.nearby_inbound_vehicle_share)} of nearby pressure`
+                    : "No dominant inbound direction detected in the nearby network yet"}
+                </p>
               </div>
               <div className="signal-meta">
                 <span className={`status-pill status-${intersection.status.toLowerCase()}`}>
@@ -134,6 +177,9 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
                 </span>
                 <strong>{intersection.recommended_green_seconds}s green</strong>
                 <span>{intersection.live_vehicle_count} vehicles in queue</span>
+                <span>
+                  Inbound pressure score {intersection.incoming_pressure_score}
+                </span>
               </div>
             </article>
           ))
@@ -164,6 +210,11 @@ function OperationsPanel({ dashboard }) {
           label="Intersections tracked"
           value={dashboard?.intersections?.length ?? "--"}
           detail="Sample live corridor network"
+        />
+        <MetricCard
+          label="Direction scan radius"
+          value={dashboard ? `${dashboard.priority_radius_km} km` : "--"}
+          detail="Nearby junctions checked for inbound traffic flow"
         />
         <MetricCard
           label="Active queue"
@@ -520,8 +571,9 @@ function ConfirmationPanel({ dashboard, record, onReset }) {
         <h2>{record.request_id}</h2>
         <p className="hero-copy">
           {record.vehicle_type} priority has been registered from {record.origin} to{" "}
-          {record.destination}. The backend generated a staged green corridor for
-          the current network snapshot.
+          {record.destination}. The backend generated a staged green corridor on
+          top of the same direction-aware traffic model used for the live
+          network snapshot.
         </p>
 
         <div className="metric-grid">
@@ -540,6 +592,11 @@ function ConfirmationPanel({ dashboard, record, onReset }) {
             value={`${record.corridor_window_seconds}s`}
             detail="Green window applied per intersection"
           />
+          <MetricCard
+            label="Direction screen"
+            value={`${record.priority_radius_km} km`}
+            detail="Nearby inbound traffic is checked before sequencing"
+          />
         </div>
 
         <div className="section-head">
@@ -557,6 +614,18 @@ function ConfirmationPanel({ dashboard, record, onReset }) {
                 <strong>{step.intersection_name}</strong>
                 <span>
                   {formatTimestamp(step.green_from)} to {formatTimestamp(step.green_to)}
+                </span>
+                <span className="timeline-detail">
+                  {step.priority_phase === "radius-first"
+                    ? "Within the nearby priority radius"
+                    : "Handled after nearby intersections"}{" "}
+                  | {formatMovementAlignment(step.movement_alignment)}
+                  {step.target_flow_direction
+                    ? ` | ${formatDirection(step.target_flow_direction)} flow checked`
+                    : ""}
+                  {step.approaching_vehicle_share != null
+                    ? ` | ${formatShare(step.approaching_vehicle_share)} inbound share`
+                    : ""}
                 </span>
               </div>
             </article>

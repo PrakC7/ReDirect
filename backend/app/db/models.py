@@ -15,6 +15,7 @@ class Intersection:
     historical_congestion: float
     live_vehicle_count: int
     signal_group: str
+    movement_profile: dict[str, int]
 
 
 @dataclass(slots=True)

@@ -5,6 +5,13 @@ from pydantic import BaseModel, Field
 
 
 PriorityLevel = Literal["Critical", "High", "Medium"]
+MovementAlignment = Literal[
+    "at-zone",
+    "towards-zone",
+    "cross-traffic",
+    "away-from-zone",
+    "undetermined",
+]
 
 
 class IntersectionSnapshot(BaseModel):
@@ -15,6 +22,9 @@ class IntersectionSnapshot(BaseModel):
     live_vehicle_count: int
     density_score: float
     priority_score: float
+    incoming_pressure_score: float
+    primary_inbound_direction: str | None = None
+    nearby_inbound_vehicle_share: float
     recommended_green_seconds: int
     status: str
 
@@ -24,6 +34,11 @@ class IntersectionPriorityStep(BaseModel):
     intersection_name: str
     distance_km: float | None
     priority_phase: Literal["radius-first", "remaining"]
+    target_flow_direction: str | None = None
+    dominant_flow_direction: str | None = None
+    approaching_zone: bool
+    approaching_vehicle_share: float = Field(..., ge=0.0, le=1.0)
+    movement_alignment: MovementAlignment
 
 
 class CorridorStep(BaseModel):
@@ -33,6 +48,10 @@ class CorridorStep(BaseModel):
     green_to: datetime
     distance_km: float | None = None
     priority_phase: Literal["radius-first", "remaining"] | None = None
+    target_flow_direction: str | None = None
+    approaching_zone: bool | None = None
+    approaching_vehicle_share: float | None = Field(default=None, ge=0.0, le=1.0)
+    movement_alignment: MovementAlignment | None = None
 
 
 class EmergencyRequestCreate(BaseModel):

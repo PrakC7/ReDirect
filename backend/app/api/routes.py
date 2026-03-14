@@ -19,6 +19,7 @@ from app.services.intersection_priority import (
     build_intersection_priority_plan,
     resolve_anchor_intersection,
 )
+from app.services.network_flow import build_network_flow_insights
 from app.services.optimization import build_signal_plan, calculate_priority_score
 
 router = APIRouter()
@@ -37,6 +38,12 @@ SAMPLE_INTERSECTIONS = [
         historical_congestion=0.88,
         live_vehicle_count=48,
         signal_group="North-South",
+        movement_profile={
+            "northbound": 13,
+            "southbound": 17,
+            "eastbound": 8,
+            "westbound": 10,
+        },
     ),
     Intersection(
         id=102,
@@ -50,6 +57,12 @@ SAMPLE_INTERSECTIONS = [
         historical_congestion=0.79,
         live_vehicle_count=41,
         signal_group="East-West",
+        movement_profile={
+            "northbound": 6,
+            "southbound": 4,
+            "eastbound": 7,
+            "westbound": 24,
+        },
     ),
     Intersection(
         id=103,
@@ -63,6 +76,12 @@ SAMPLE_INTERSECTIONS = [
         historical_congestion=0.91,
         live_vehicle_count=63,
         signal_group="North-South",
+        movement_profile={
+            "northbound": 9,
+            "southbound": 8,
+            "eastbound": 11,
+            "westbound": 35,
+        },
     ),
     Intersection(
         id=104,
@@ -76,6 +95,12 @@ SAMPLE_INTERSECTIONS = [
         historical_congestion=0.74,
         live_vehicle_count=39,
         signal_group="East-West",
+        movement_profile={
+            "northbound": 4,
+            "southbound": 20,
+            "eastbound": 5,
+            "westbound": 10,
+        },
     ),
     Intersection(
         id=105,
@@ -89,6 +114,12 @@ SAMPLE_INTERSECTIONS = [
         historical_congestion=0.69,
         live_vehicle_count=36,
         signal_group="North-South",
+        movement_profile={
+            "northbound": 16,
+            "southbound": 5,
+            "eastbound": 10,
+            "westbound": 5,
+        },
     ),
 ]
 
@@ -115,12 +146,16 @@ def _build_network_state() -> list[tuple[Intersection, float, dict[str, int]]]:
 
 def _build_priority_score_lookup(
     state: list[tuple[Intersection, float, dict[str, int]]],
+    network_flow_insights: dict[int, dict[str, float | str | int | None]],
 ) -> dict[int, float]:
     return {
         intersection.id: calculate_priority_score(
             density_score,
             intersection.road_priority_weight,
             distribution,
+            float(
+                network_flow_insights[intersection.id]["incoming_pressure_score"]
+            ),
         )
         for intersection, density_score, distribution in state
     }
@@ -128,7 +163,16 @@ def _build_priority_score_lookup(
 
 def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
     state = _build_network_state()
-    plan = build_signal_plan(state)
+    live_intersections = [intersection for intersection, _, _ in state]
+    network_flow_insights = build_network_flow_insights(
+        live_intersections,
+        PRIORITY_RADIUS_KM,
+    )
+    directional_pressure_scores = {
+        intersection_id: float(insight["incoming_pressure_score"])
+        for intersection_id, insight in network_flow_insights.items()
+    }
+    plan = build_signal_plan(state, directional_pressure_scores)
     by_intersection_id = {
         intersection.id: intersection for intersection, _, _ in state
     }
@@ -140,6 +184,7 @@ def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
     for intersection_id, _, priority_score, green_time in plan:
         intersection = by_intersection_id[intersection_id]
         density_score = density_by_intersection[intersection_id]
+        network_insight = network_flow_insights[intersection_id]
         snapshots.append(
             IntersectionSnapshot(
                 id=intersection.id,
@@ -149,6 +194,15 @@ def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
                 live_vehicle_count=intersection.live_vehicle_count,
                 density_score=density_score,
                 priority_score=round(priority_score, 2),
+                incoming_pressure_score=float(
+                    network_insight["incoming_pressure_score"]
+                ),
+                primary_inbound_direction=network_insight[
+                    "primary_inbound_direction"
+                ],
+                nearby_inbound_vehicle_share=float(
+                    network_insight["nearby_inbound_vehicle_share"]
+                ),
                 recommended_green_seconds=green_time,
                 status=get_density_status(density_score),
             )
@@ -162,8 +216,12 @@ def _build_corridor_plan_context(
     destination: str,
 ) -> tuple[list[Intersection], list]:
     state = _build_network_state()
-    priority_scores = _build_priority_score_lookup(state)
     live_intersections = [intersection for intersection, _, _ in state]
+    network_flow_insights = build_network_flow_insights(
+        live_intersections,
+        PRIORITY_RADIUS_KM,
+    )
+    priority_scores = _build_priority_score_lookup(state, network_flow_insights)
     anchor = resolve_anchor_intersection(
         f"{origin} {destination}",
         live_intersections,

@@ -8,18 +8,20 @@ def calculate_priority_score(
     density_score: float,
     road_priority_weight: float,
     vehicle_distribution: Dict[str, int] = None,
+    inbound_pressure_score: float = 0.0,
 ) -> float:
     base_score = density_score * (1.0 + road_priority_weight)
-    
-    # Public Transport Priority:
-    # Boost priority if buses are detected.
-    # Each bus adds 15% to the priority score, up to a max of 50% boost.
+
+    # Public transport gets a controlled bump without overwhelming congestion.
     bus_boost = 0.0
     if vehicle_distribution:
         bus_count = vehicle_distribution.get("bus", 0)
         bus_boost = min(bus_count * 0.15, 0.5)
-    
-    return base_score * (1.0 + bus_boost)
+
+    # Network pressure increases priority when nearby traffic is flowing in.
+    directional_boost = min(max(inbound_pressure_score, 0.0) * 0.45, 0.45)
+
+    return base_score * (1.0 + bus_boost + directional_boost)
 
 
 def generate_green_time(priority_score: float, max_priority: float) -> int:
@@ -34,7 +36,8 @@ def generate_green_time(priority_score: float, max_priority: float) -> int:
 
 
 def build_signal_plan(
-    intersections: List[Tuple[Intersection, float, Dict[str, int]]]
+    intersections: List[Tuple[Intersection, float, Dict[str, int]]],
+    directional_pressure_scores: Dict[int, float] | None = None,
 ) -> List[Tuple[int, float, float, int]]:
     """
     Builds a signal plan for a list of intersections.
@@ -44,7 +47,12 @@ def build_signal_plan(
     priorities = []
     for intersection, density_score, distribution in intersections:
         priority = calculate_priority_score(
-            density_score, intersection.road_priority_weight, distribution
+            density_score,
+            intersection.road_priority_weight,
+            distribution,
+            directional_pressure_scores.get(intersection.id, 0.0)
+            if directional_pressure_scores
+            else 0.0,
         )
         priorities.append((intersection.id, density_score, priority))
 

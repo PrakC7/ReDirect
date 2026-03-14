@@ -246,6 +246,11 @@ textarea {
   font-size: 0.92rem;
 }
 
+.flow-note,
+.timeline-detail {
+  line-height: 1.5;
+}
+
 .signal-meta,
 .request-card-top,
 .timeline-content {

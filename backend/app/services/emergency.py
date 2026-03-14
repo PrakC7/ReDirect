@@ -42,6 +42,18 @@ def build_corridor(
                 green_to=slot + timedelta(seconds=window_seconds),
                 distance_km=priority_step.distance_km if priority_step else None,
                 priority_phase=priority_step.priority_phase if priority_step else None,
+                target_flow_direction=(
+                    priority_step.target_flow_direction if priority_step else None
+                ),
+                approaching_zone=(
+                    priority_step.approaching_zone if priority_step else None
+                ),
+                approaching_vehicle_share=(
+                    priority_step.approaching_vehicle_share if priority_step else None
+                ),
+                movement_alignment=(
+                    priority_step.movement_alignment if priority_step else None
+                ),
             )
         )
         slot += timedelta(seconds=window_seconds)
