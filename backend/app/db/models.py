@@ -16,6 +16,9 @@ class Intersection:
     live_vehicle_count: int
     signal_group: str
     movement_profile: dict[str, int]
+    vehicle_distribution_profile: dict[str, int] = field(default_factory=dict)
+    location_aliases: tuple[str, ...] = ()
+    road_links_km: dict[int, float] = field(default_factory=dict)
     enforcement_camera_enabled: bool = False
     expected_flow_direction: str | None = None
     enforcement_camera_quality: str | None = None

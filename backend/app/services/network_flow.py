@@ -31,8 +31,7 @@ def build_network_flow_insights(
                 _dominant_flow_direction,
                 approaching_zone,
                 approaching_vehicle_share,
-            ) = describe_directional_flow(source, target)
-
+            ) = describe_directional_flow(source, target, intersections)
             if distance is None or distance > radius_km:
                 continue
 

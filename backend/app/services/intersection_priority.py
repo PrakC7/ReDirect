@@ -2,6 +2,7 @@ from math import asin, atan2, cos, degrees, radians, sin, sqrt
 
 from app.db.models import Intersection
 from app.schemas import IntersectionPriorityStep
+from app.services.route_network import shortest_distance_km
 
 PRIORITY_RADIUS_KM = 20.0
 CARDINAL_BEARINGS = {
@@ -147,6 +148,7 @@ def _movement_alignment_details(
 def describe_directional_flow(
     source: Intersection,
     target: Intersection | None,
+    network_intersections: list[Intersection] | None = None,
 ) -> tuple[float | None, str, str | None, str | None, bool, float]:
     if target is None:
         dominant_flow_direction = max(
@@ -156,15 +158,22 @@ def describe_directional_flow(
         )
         return None, "undetermined", None, dominant_flow_direction, False, 0.0
 
-    target_distance = round(
-        distance_km(
-            source.latitude,
-            source.longitude,
-            target.latitude,
-            target.longitude,
-        ),
-        1,
+    road_distance = (
+        shortest_distance_km(network_intersections, source.id, target.id)
+        if network_intersections
+        else None
     )
+    target_distance = road_distance
+    if target_distance is None:
+        target_distance = round(
+            distance_km(
+                source.latitude,
+                source.longitude,
+                target.latitude,
+                target.longitude,
+            ),
+            1,
+        )
     target_bearing = None
     if target_distance != 0:
         target_bearing = bearing_degrees(
@@ -203,6 +212,7 @@ def resolve_anchor_intersection(
             intersection.name.lower(),
             intersection.zone.lower(),
             intersection.signal_group.lower(),
+            *[alias.lower() for alias in intersection.location_aliases],
         ]
         score = 0
 
@@ -225,11 +235,14 @@ def build_intersection_priority_plan(
     intersections: list[Intersection],
     priority_scores: dict[int, float],
     radius_km: float = PRIORITY_RADIUS_KM,
+    resolved_route_ids: set[int] | None = None,
 ) -> tuple[list[Intersection], list[IntersectionPriorityStep]]:
     ranked: list[
         tuple[
             Intersection,
             float | None,
+            float | None,
+            bool,
             bool,
             float,
             str,
@@ -240,9 +253,9 @@ def build_intersection_priority_plan(
         ]
     ] = []
 
+    route_ids = resolved_route_ids or set()
+
     for intersection in intersections:
-        anchor_distance = None
-        within_radius = False
         (
             anchor_distance,
             movement_alignment,
@@ -253,16 +266,24 @@ def build_intersection_priority_plan(
         ) = describe_directional_flow(
             intersection,
             anchor,
+            intersections,
         )
         within_radius = (
             anchor_distance is not None and anchor_distance <= radius_km
+        )
+        road_distance = (
+            shortest_distance_km(intersections, intersection.id, anchor.id)
+            if anchor is not None
+            else None
         )
 
         ranked.append(
             (
                 intersection,
                 anchor_distance,
+                road_distance,
                 within_radius,
+                intersection.id in route_ids,
                 priority_scores.get(intersection.id, 0.0),
                 movement_alignment,
                 target_flow_direction,
@@ -275,34 +296,39 @@ def build_intersection_priority_plan(
     ordered = sorted(
         ranked,
         key=lambda item: (
-            not item[2],
-            -ALIGNMENT_PRIORITY[item[4]],
-            item[1] if item[1] is not None else float("inf"),
-            -item[8],
-            -item[3],
+            not item[3],
+            not item[4],
+            -ALIGNMENT_PRIORITY[item[6]],
+            item[2] if item[2] is not None else (
+                item[1] if item[1] is not None else float("inf")
+            ),
+            -item[10],
+            -item[5],
             item[0].id,
         ),
     )
 
-    ordered_intersections = [
-        intersection for intersection, *_ in ordered
-    ]
+    ordered_intersections = [intersection for intersection, *_ in ordered]
     priority_steps = [
         IntersectionPriorityStep(
             intersection_id=intersection.id,
             intersection_name=intersection.name,
             distance_km=distance,
+            road_distance_km=road_distance,
             priority_phase="radius-first" if within_radius else "remaining",
             target_flow_direction=target_flow_direction,
             dominant_flow_direction=dominant_flow_direction,
             approaching_zone=approaching_zone,
             approaching_vehicle_share=approaching_vehicle_share,
+            on_resolved_route=on_resolved_route,
             movement_alignment=movement_alignment,
         )
         for (
             intersection,
             distance,
+            road_distance,
             within_radius,
+            on_resolved_route,
             _priority_score,
             movement_alignment,
             target_flow_direction,

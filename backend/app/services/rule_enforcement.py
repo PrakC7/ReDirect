@@ -79,20 +79,30 @@ def build_wrong_way_enforcement(
         allowed_direction = intersection.expected_flow_direction
         observed_direction = OPPOSITE_DIRECTION.get(allowed_direction)
         total_flow = sum(intersection.movement_profile.values()) or 1
+        allowed_flow_count = intersection.movement_profile.get(allowed_direction, 0)
         wrong_way_count = (
             intersection.movement_profile.get(observed_direction, 0)
             if observed_direction
             else 0
         )
-        wrong_way_share = round(wrong_way_count / total_flow, 2)
+        monitored_axis_total = max(allowed_flow_count + wrong_way_count, 1)
+        wrong_way_share = round(wrong_way_count / monitored_axis_total, 2)
+        cross_traffic_count = max(total_flow - monitored_axis_total, 0)
 
         record_count = 0
-        if wrong_way_count >= 10 or wrong_way_share >= 0.18:
+        if (
+            wrong_way_count >= 8
+            or (wrong_way_count >= 5 and wrong_way_share >= 0.25)
+        ):
             record_count = 2
-        elif wrong_way_count >= 4 or wrong_way_share >= 0.08:
+        elif (
+            wrong_way_count >= 3
+            and wrong_way_share >= 0.12
+            and wrong_way_count > max(cross_traffic_count // 3, 0)
+        ):
             record_count = 1
 
-        confidence = min(0.97, 0.72 + (wrong_way_share * 0.9))
+        confidence = min(0.97, 0.68 + (wrong_way_share * 1.1))
         intersection_records = []
         for index in range(record_count):
             if observed_direction is None:

@@ -7,11 +7,15 @@ from uuid import uuid4
 from app.db.models import Intersection
 from app.schemas import (
     ActiveEmergencySummary,
+    ControllerApprovalRecord,
     CorridorStep,
+    EmergencyApprovalRequest,
     EmergencyRequestCreate,
     EmergencyRequestRecord,
+    EmergencyRouteSuggestion,
     IntersectionPriorityStep,
 )
+from app.services.prototype_state import PrototypeStateStore
 
 PRIORITY_TO_TIME_SAVED = {"Critical": 8, "High": 5, "Medium": 3}
 PRIORITY_TO_WINDOW_SECONDS = {"Critical": 45, "High": 60, "Medium": 75}
@@ -41,6 +45,9 @@ def build_corridor(
                 green_from=slot,
                 green_to=slot + timedelta(seconds=window_seconds),
                 distance_km=priority_step.distance_km if priority_step else None,
+                road_distance_km=(
+                    priority_step.road_distance_km if priority_step else None
+                ),
                 priority_phase=priority_step.priority_phase if priority_step else None,
                 target_flow_direction=(
                     priority_step.target_flow_direction if priority_step else None
@@ -50,6 +57,9 @@ def build_corridor(
                 ),
                 approaching_vehicle_share=(
                     priority_step.approaching_vehicle_share if priority_step else None
+                ),
+                on_resolved_route=(
+                    priority_step.on_resolved_route if priority_step else None
                 ),
                 movement_alignment=(
                     priority_step.movement_alignment if priority_step else None
@@ -62,15 +72,23 @@ def build_corridor(
 
 
 class EmergencyRequestStore:
-    def __init__(self, ttl_seconds: int) -> None:
+    def __init__(
+        self,
+        ttl_seconds: int,
+        state_store: PrototypeStateStore | None = None,
+    ) -> None:
         self._ttl_seconds = ttl_seconds
-        self._records: list[EmergencyRequestRecord] = []
+        self._state_store = state_store or PrototypeStateStore()
+        self._records = [
+            EmergencyRequestRecord.model_validate(record)
+            for record in self._state_store.load_emergency_requests()
+        ]
         self._lock = Lock()
 
     def create(
         self,
         payload: EmergencyRequestCreate,
-        corridor: list[CorridorStep],
+        route_suggestions: list[EmergencyRouteSuggestion],
         priority_radius_km: int,
         priority_intersections: list[IntersectionPriorityStep],
     ) -> EmergencyRequestRecord:
@@ -78,12 +96,21 @@ class EmergencyRequestStore:
         window_seconds = PRIORITY_TO_WINDOW_SECONDS[payload.priority]
         record = EmergencyRequestRecord(
             request_id=f"RD-{uuid4().hex[:8].upper()}",
-            status="Corridor scheduled",
+            status="Awaiting controller approval",
             submitted_at=submitted_at,
             suggested_time_saved_minutes=PRIORITY_TO_TIME_SAVED[payload.priority],
             corridor_window_seconds=window_seconds,
             priority_radius_km=priority_radius_km,
-            corridor=corridor,
+            approval_required=True,
+            approved_route_id=None,
+            route_suggestions=route_suggestions,
+            controller_approval=None,
+            signal_override_guidance=(
+                "Only traffic police or control-room officers can authorize "
+                "signal override after the marked emergency vehicle is "
+                "confirmed on camera at the reported location."
+            ),
+            corridor=[],
             priority_intersections=priority_intersections,
             **payload.model_dump(),
         )
@@ -91,6 +118,7 @@ class EmergencyRequestStore:
         with self._lock:
             self._prune_locked(submitted_at)
             self._records.append(record)
+            self._persist_locked()
 
         return record
 
@@ -98,6 +126,7 @@ class EmergencyRequestStore:
         with self._lock:
             now = datetime.utcnow()
             self._prune_locked(now)
+            self._persist_locked()
             return sorted(
                 self._records,
                 key=lambda record: (
@@ -116,12 +145,67 @@ class EmergencyRequestStore:
                 destination=record.destination,
                 submitted_at=record.submitted_at,
                 suggested_time_saved_minutes=record.suggested_time_saved_minutes,
+                status=record.status,
             )
             for record in self.list_active()
         ]
+
+    def get(self, request_id: str) -> EmergencyRequestRecord:
+        for record in self.list_active():
+            if record.request_id == request_id:
+                return record
+        raise KeyError(request_id)
+
+    def approve(
+        self,
+        request_id: str,
+        approval: EmergencyApprovalRequest,
+        corridor: list[CorridorStep],
+        priority_intersections: list[IntersectionPriorityStep],
+    ) -> EmergencyRequestRecord:
+        with self._lock:
+            now = datetime.utcnow()
+            self._prune_locked(now)
+            for index, record in enumerate(self._records):
+                if record.request_id != request_id:
+                    continue
+
+                updated = record.model_copy(
+                    update={
+                        "status": "Controller approved",
+                        "approval_required": False,
+                        "approved_route_id": approval.route_id,
+                        "controller_approval": ControllerApprovalRecord(
+                            approved_at=now,
+                            controller_name=approval.controller_name,
+                            controller_role=approval.controller_role,
+                            approval_method=approval.approval_method,
+                            camera_reference=approval.camera_reference,
+                            approved_route_id=approval.route_id,
+                            signal_override_authorized=approval.signal_override_authorized,
+                        ),
+                        "signal_override_guidance": (
+                            "Controller approval is active. The marked emergency vehicle "
+                            "must follow the approved corridor, and any controlled red or "
+                            "yellow crossing remains under traffic-police supervision."
+                        ),
+                        "corridor": corridor,
+                        "priority_intersections": priority_intersections,
+                    }
+                )
+                self._records[index] = updated
+                self._persist_locked()
+                return updated
+
+        raise KeyError(request_id)
 
     def _prune_locked(self, now: datetime) -> None:
         cutoff = now - timedelta(seconds=self._ttl_seconds)
         self._records = [
             record for record in self._records if record.submitted_at >= cutoff
         ]
+
+    def _persist_locked(self) -> None:
+        self._state_store.save_emergency_requests(
+            [record.model_dump(mode="json") for record in self._records]
+        )

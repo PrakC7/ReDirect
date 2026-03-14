@@ -7,7 +7,7 @@ The current version keeps the same project concept, but improves how decisions a
 - nearby intersections are checked first within a `20 km` radius
 - vehicle motion direction is used to decide whether traffic is actually moving toward a target area
 - normal signal timing uses the same logic as emergency routing
-- emergency corridors are generated on top of the live network optimisation instead of using a separate isolated flow
+- emergency corridors are generated only after controller approval on top of the live network optimisation
 - optional wrong-way rule enforcement can be enabled only at specific locations that already have high-quality cameras
 
 ## What Is New In This Version
@@ -16,6 +16,10 @@ The current version keeps the same project concept, but improves how decisions a
 - Incoming pressure scoring based on nearby intersections and inbound vehicle flow
 - Radius-first prioritisation so close intersections are handled before the remaining network
 - Direction-aware emergency corridor sequencing
+- GPS or map-verified emergency requests instead of plain text-only route submission
+- Route suggestions that can pick a clearer alternate emergency path when the shortest path is already congested
+- Controller approval step before signal override is activated for emergency vehicles
+- Edge telemetry ingestion so the dashboard can consume compact roadside numeric packets
 - Optional wrong-way violation detection with saved vehicle records for selected high-quality camera sites
 - Updated dashboard preview showing inbound pressure and flow direction context
 - Cleaner repository structure and preview-ready FastAPI + React demo
@@ -45,10 +49,10 @@ This makes the prototype closer to a practical control-room workflow instead of 
 ### Emergency Movement Workflow
 
 1. An operator submits an emergency request.
-2. The backend resolves the closest relevant intersection context from the route.
-3. Intersections within the nearby radius are prioritised first.
-4. Their vehicle flow direction is checked to see whether traffic is moving into the corridor zone.
-5. A staged green corridor is generated, followed by the remaining intersections.
+2. The request must include GPS or map-picked coordinates for the origin and destination.
+3. The backend resolves the nearest prototype intersections and suggests the clearest route under current live traffic pressure.
+4. Traffic police or control-room staff approve the marked emergency vehicle after camera confirmation.
+5. Only then is the staged signal corridor activated for the approved route.
 
 ## Visual Overview
 
@@ -86,6 +90,7 @@ ReDirect continuously ranks intersections using:
 - public transport weight
 - nearby inbound traffic pressure
 - vehicle movement direction
+- live telemetry from roadside devices when it is available
 
 ### Direction-Aware Decision Logic
 
@@ -100,6 +105,13 @@ That makes prioritisation more realistic for both daily traffic balancing and em
 ### Emergency Corridor Planning
 
 Emergency requests still remain a core part of the project. The difference is that corridor generation now reuses the same live optimisation model used by the dashboard.
+
+Emergency routing is now also approval-aware:
+
+- the requester must provide verified coordinates
+- the system suggests a primary and fallback route
+- the corridor only turns active after controller approval and camera confirmation of the marked emergency vehicle
+- controlled red or yellow crossing guidance is shown only for the approved emergency corridor
 
 ### Optional Wrong-Way Rule Enforcement
 
@@ -127,6 +139,7 @@ Many city roads and junctions operate with limited or inconsistent connectivity.
 - combine those counts into compact count codes before upload
 - detect emergency presence from local inference
 - send only compact numeric values to the backend
+- keep the control room updated even before a high-bandwidth video stream is available
 
 Instead of depending on heavy data transfer, it can send packets such as:
 
@@ -197,12 +210,13 @@ This helps the project stay efficient and affordable while still allowing strong
 
 1. `density.py` computes congestion pressure.
 2. `ai/detection.py` can preprocess raw detections into directional count codes and average-speed summaries.
-3. `network_flow.py` estimates inbound pressure from nearby intersections.
-4. `optimization.py` combines density and directional pressure into signal priority.
-5. `edge_processor.py` shows how roadside devices can send numeric packets and directional count-code packets in low-connectivity areas.
-6. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
-7. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
-8. `emergency.py` turns the ranked intersections into staged green windows.
+3. `route_network.py` resolves road-linked prototype paths, nearby anchors, and emergency route options.
+4. `network_flow.py` estimates inbound pressure from nearby intersections.
+5. `optimization.py` combines density and directional pressure into signal priority.
+6. `edge_processor.py` shows how roadside devices can send numeric packets and directional count-code packets in low-connectivity areas.
+7. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
+8. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
+9. `emergency.py` keeps requests pending until controller approval activates the corridor.
 
 ## Project Structure
 
@@ -297,7 +311,10 @@ http://127.0.0.1:8000/docs
 - `GET /health`
 - `GET /preview`
 - `GET /api/v1/dashboard`
+- `POST /api/v1/telemetry/summary`
+- `POST /api/v1/telemetry/count-codes`
 - `POST /api/v1/emergency/requests`
+- `POST /api/v1/emergency/requests/{request_id}/approve`
 - `GET /api/v1/emergency/requests`
 - `GET /api/v1/gov/emergency/active`
 - `GET /api/v1/gov/violations/wrong-way`
@@ -306,8 +323,11 @@ http://127.0.0.1:8000/docs
 ## Current Prototype Notes
 
 - The backend currently uses in-memory storage for active emergency requests.
-- Live traffic values are simulated for demo purposes.
+- The backend uses a lightweight prototype state file so telemetry and active requests survive restarts in demo mode.
+- Live traffic values still fall back to simulation when no telemetry packet has been ingested.
 - Directional movement is represented using structured motion profiles in the sample network.
+- Emergency submission is blocked unless origin and destination are verified from GPS or a map-picked location.
+- Emergency corridors remain pending until a controller approves the route after camera confirmation of the marked vehicle.
 - Wrong-way violation records are shown as an optional add-on only for selected intersections with existing high-quality cameras.
 - The edge module includes low-bandwidth packet examples for roadside devices that send numeric traffic summaries and grouped directional count codes instead of full video streams.
 - The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.

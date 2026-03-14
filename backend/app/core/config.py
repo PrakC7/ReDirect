@@ -22,7 +22,16 @@ class Settings:
         self.signal_min_green = int(os.getenv("SIGNAL_MIN_GREEN", "20"))
         self.signal_max_green = int(os.getenv("SIGNAL_MAX_GREEN", "90"))
         self.signal_update_interval = int(os.getenv("SIGNAL_UPDATE_INTERVAL", "30"))
+        self.telemetry_freshness_seconds = int(
+            os.getenv("TELEMETRY_FRESHNESS_SECONDS", "180")
+        )
         self.emergency_ttl_seconds = int(os.getenv("EMERGENCY_TTL_SECONDS", "900"))
+        self.location_match_radius_km = float(
+            os.getenv("LOCATION_MATCH_RADIUS_KM", "18")
+        )
+        self.corridor_max_intersections = int(
+            os.getenv("CORRIDOR_MAX_INTERSECTIONS", "8")
+        )
         self.gov_api_key = os.getenv("GOV_API_KEY", "redirect-demo-key")
 
 

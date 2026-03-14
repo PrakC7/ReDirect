@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 
-import { createEmergencyRequest, fetchDashboard } from "./api";
+import {
+  approveEmergencyRequest,
+  createEmergencyRequest,
+  fetchDashboard,
+} from "./api";
 
 const VEHICLE_TYPES = [
   "Ambulance",
@@ -22,6 +26,10 @@ const PURPOSES = [
 
 const PRIORITIES = ["Critical", "High", "Medium"];
 const VEHICLE_ID_TYPES = ["Vehicle Number", "Unit ID", "Department ID"];
+const LOCATION_SOURCES = [
+  { value: "device-gps", label: "Device GPS" },
+  { value: "maps-picked", label: "Google Maps / map app" },
+];
 const DIRECTION_LABELS = {
   northbound: "Northbound",
   southbound: "Southbound",
@@ -43,8 +51,17 @@ const INITIAL_FORM = {
   purpose: "",
   otherPurpose: "",
   origin: "",
+  originLatitude: "",
+  originLongitude: "",
+  originLocationSource: "",
   destination: "",
+  destinationLatitude: "",
+  destinationLongitude: "",
+  destinationLocationSource: "maps-picked",
   returnDestination: "",
+  returnDestinationLatitude: "",
+  returnDestinationLongitude: "",
+  returnDestinationLocationSource: "maps-picked",
   vehicleIdType: "",
   vehicleId: "",
   priority: "Critical",
@@ -86,6 +103,12 @@ function formatShare(value) {
   }
 
   return `${Math.round(value * 100)}%`;
+}
+
+function formatLocationSource(source) {
+  return (
+    LOCATION_SOURCES.find((item) => item.value === source)?.label || source || "Pending verification"
+  );
 }
 
 function MetricCard({ label, value, detail }) {
@@ -259,6 +282,7 @@ function OperationsPanel({ dashboard }) {
                   {request.origin} to {request.destination}
                 </p>
                 <span>{request.suggested_time_saved_minutes} min estimated gain</span>
+                <span>{request.status}</span>
               </article>
             ))}
           </div>
@@ -310,6 +334,7 @@ function OperationsPanel({ dashboard }) {
 function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
   const [form, setForm] = useState(INITIAL_FORM);
   const [errors, setErrors] = useState({});
+  const [locationBusy, setLocationBusy] = useState("");
 
   function handleChange(event) {
     const { name, type, value, checked } = event.target;
@@ -347,8 +372,29 @@ function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
     if (!form.origin.trim()) {
       nextErrors.origin = "Origin location is required.";
     }
+    if (!form.originLatitude || !form.originLongitude || !form.originLocationSource) {
+      nextErrors.originLocation =
+        "Origin must be verified with GPS or a map-picked coordinate.";
+    }
     if (!form.destination.trim()) {
       nextErrors.destination = "Destination location is required.";
+    }
+    if (
+      !form.destinationLatitude ||
+      !form.destinationLongitude ||
+      !form.destinationLocationSource
+    ) {
+      nextErrors.destinationLocation =
+        "Destination must be verified with GPS or a map-picked coordinate.";
+    }
+    if (
+      form.returnDestination.trim() &&
+      (!form.returnDestinationLatitude ||
+        !form.returnDestinationLongitude ||
+        !form.returnDestinationLocationSource)
+    ) {
+      nextErrors.returnDestinationLocation =
+        "Return destination also needs map-picked coordinates if you provide it.";
     }
     if (!form.vehicleIdType) {
       nextErrors.vehicleIdType = "Select an identification type.";
@@ -365,6 +411,42 @@ function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
     }
 
     return nextErrors;
+  }
+
+  function useCurrentLocation(fieldPrefix) {
+    if (!navigator.geolocation) {
+      setErrors((current) => ({
+        ...current,
+        [`${fieldPrefix}Location`]: "This browser does not support GPS capture.",
+      }));
+      return;
+    }
+
+    setLocationBusy(fieldPrefix);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setForm((current) => ({
+          ...current,
+          [`${fieldPrefix}Latitude`]: position.coords.latitude.toFixed(6),
+          [`${fieldPrefix}Longitude`]: position.coords.longitude.toFixed(6),
+          [`${fieldPrefix}LocationSource`]: "device-gps",
+        }));
+        setErrors((current) => ({
+          ...current,
+          [`${fieldPrefix}Location`]: "",
+        }));
+        setLocationBusy("");
+      },
+      () => {
+        setErrors((current) => ({
+          ...current,
+          [`${fieldPrefix}Location`]:
+            "GPS capture failed. You can still paste coordinates from Google Maps.",
+        }));
+        setLocationBusy("");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   }
 
   async function handleSubmit(event) {
@@ -484,6 +566,61 @@ function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
             </label>
 
             <label className="field">
+              <span>Origin source</span>
+              <select
+                name="originLocationSource"
+                value={form.originLocationSource}
+                onChange={handleChange}
+              >
+                <option value="">Select verification source</option>
+                {LOCATION_SOURCES.map((source) => (
+                  <option key={source.value} value={source.value}>
+                    {source.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Origin latitude</span>
+              <input
+                name="originLatitude"
+                value={form.originLatitude}
+                onChange={handleChange}
+                placeholder="Paste from GPS or Google Maps"
+              />
+            </label>
+
+            <label className="field">
+              <span>Origin longitude</span>
+              <input
+                name="originLongitude"
+                value={form.originLongitude}
+                onChange={handleChange}
+                placeholder="Paste from GPS or Google Maps"
+              />
+            </label>
+
+            <label className="field field-span">
+              <span>Origin verification</span>
+              <div className="button-row">
+                <button
+                  className="button button-secondary"
+                  onClick={() => useCurrentLocation("origin")}
+                  type="button"
+                >
+                  {locationBusy === "origin" ? "Capturing..." : "Use Current GPS"}
+                </button>
+                <span className="subtle-note">
+                  Requests stay blocked unless location comes from GPS or a map app.
+                </span>
+              </div>
+              {errors.originLocation && (
+                <small className="field-error">{errors.originLocation}</small>
+              )}
+            </label>
+
+            <label className="field">
               <span>Destination</span>
               <input
                 name="destination"
@@ -497,6 +634,61 @@ function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
             </label>
 
             <label className="field">
+              <span>Destination source</span>
+              <select
+                name="destinationLocationSource"
+                value={form.destinationLocationSource}
+                onChange={handleChange}
+              >
+                <option value="">Select verification source</option>
+                {LOCATION_SOURCES.map((source) => (
+                  <option key={source.value} value={source.value}>
+                    {source.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Destination latitude</span>
+              <input
+                name="destinationLatitude"
+                value={form.destinationLatitude}
+                onChange={handleChange}
+                placeholder="Paste from Google Maps or live GPS"
+              />
+            </label>
+
+            <label className="field">
+              <span>Destination longitude</span>
+              <input
+                name="destinationLongitude"
+                value={form.destinationLongitude}
+                onChange={handleChange}
+                placeholder="Paste from Google Maps or live GPS"
+              />
+            </label>
+
+            <label className="field field-span">
+              <span>Destination verification</span>
+              <div className="button-row">
+                <button
+                  className="button button-secondary"
+                  onClick={() => useCurrentLocation("destination")}
+                  type="button"
+                >
+                  {locationBusy === "destination" ? "Capturing..." : "Use Current GPS"}
+                </button>
+                <span className="subtle-note">
+                  For a hospital or control target, paste coordinates from Google Maps.
+                </span>
+              </div>
+              {errors.destinationLocation && (
+                <small className="field-error">{errors.destinationLocation}</small>
+              )}
+            </label>
+
+            <label className="field">
               <span>Return destination</span>
               <input
                 name="returnDestination"
@@ -504,6 +696,47 @@ function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
                 onChange={handleChange}
                 placeholder="Optional"
               />
+            </label>
+
+            <label className="field">
+              <span>Return latitude</span>
+              <input
+                name="returnDestinationLatitude"
+                value={form.returnDestinationLatitude}
+                onChange={handleChange}
+                placeholder="Optional"
+              />
+            </label>
+
+            <label className="field">
+              <span>Return longitude</span>
+              <input
+                name="returnDestinationLongitude"
+                value={form.returnDestinationLongitude}
+                onChange={handleChange}
+                placeholder="Optional"
+              />
+            </label>
+
+            <label className="field field-span">
+              <span>Return source</span>
+              <select
+                name="returnDestinationLocationSource"
+                value={form.returnDestinationLocationSource}
+                onChange={handleChange}
+              >
+                <option value="">Select verification source</option>
+                {LOCATION_SOURCES.map((source) => (
+                  <option key={source.value} value={source.value}>
+                    {source.label}
+                  </option>
+                ))}
+              </select>
+              {errors.returnDestinationLocation && (
+                <small className="field-error">
+                  {errors.returnDestinationLocation}
+                </small>
+              )}
             </label>
 
             <label className="field">
@@ -617,17 +850,56 @@ function RequestForm({ dashboard, submitting, submitError, onBack, onSubmit }) {
   );
 }
 
-function ConfirmationPanel({ dashboard, record, onReset }) {
+function ConfirmationPanel({
+  dashboard,
+  record,
+  approvalError,
+  approving,
+  onApprove,
+  onReset,
+}) {
+  const [approvalForm, setApprovalForm] = useState({
+    routeId: record.route_suggestions?.[0]?.route_id || "",
+    controllerName: "",
+    controllerRole: "",
+    cameraReference: "",
+    apiKey: "",
+  });
+
+  useEffect(() => {
+    setApprovalForm((current) => ({
+      ...current,
+      routeId: record.route_suggestions?.[0]?.route_id || current.routeId,
+    }));
+  }, [record.request_id, record.route_suggestions]);
+
+  function handleApprovalChange(event) {
+    const { name, value } = event.target;
+    setApprovalForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  async function handleApprovalSubmit(event) {
+    event.preventDefault();
+    await onApprove(approvalForm);
+  }
+
   return (
     <section className="page-grid confirmation-layout">
       <div className="panel confirmation-panel">
-        <div className="confirmation-badge">Request accepted</div>
+        <div className="confirmation-badge">
+          {record.status === "Controller approved"
+            ? "Controller approved"
+            : "Awaiting controller approval"}
+        </div>
         <h2>{record.request_id}</h2>
         <p className="hero-copy">
-          {record.vehicle_type} priority has been registered from {record.origin} to{" "}
-          {record.destination}. The backend generated a staged green corridor on
-          top of the same direction-aware traffic model used for the live
-          network snapshot.
+          {record.vehicle_type} request has been registered from {record.origin} to{" "}
+          {record.destination}. ReDirect now suggests the least-congested route
+          first, then activates the signal corridor only after controller
+          approval confirms the marked emergency vehicle on camera.
         </p>
 
         <div className="metric-grid">
@@ -650,41 +922,151 @@ function ConfirmationPanel({ dashboard, record, onReset }) {
             label="Direction screen"
             value={`${record.priority_radius_km} km`}
             detail="Nearby inbound traffic is checked before sequencing"
-          />
-        </div>
+            />
+          </div>
 
         <div className="section-head">
-          <h3>Generated corridor sequence</h3>
+          <h3>Suggested emergency routes</h3>
           <span className="subtle-note">
             Submitted at {formatTimestamp(record.submitted_at)}
           </span>
         </div>
 
-        <div className="timeline">
-          {record.corridor.map((step) => (
-            <article className="timeline-item" key={`${record.request_id}-${step.intersection_id}`}>
-              <div className="timeline-dot" />
-              <div className="timeline-content">
-                <strong>{step.intersection_name}</strong>
-                <span>
-                  {formatTimestamp(step.green_from)} to {formatTimestamp(step.green_to)}
-                </span>
-                <span className="timeline-detail">
-                  {step.priority_phase === "radius-first"
-                    ? "Within the nearby priority radius"
-                    : "Handled after nearby intersections"}{" "}
-                  | {formatMovementAlignment(step.movement_alignment)}
-                  {step.target_flow_direction
-                    ? ` | ${formatDirection(step.target_flow_direction)} flow checked`
-                    : ""}
-                  {step.approaching_vehicle_share != null
-                    ? ` | ${formatShare(step.approaching_vehicle_share)} inbound share`
-                    : ""}
+        <div className="request-list">
+          {record.route_suggestions.map((route) => (
+            <article className="request-card" key={route.route_id}>
+              <div className="request-card-top">
+                <strong>{route.label}</strong>
+                <span className="status-pill status-inline">
+                  {route.total_distance_km} km
                 </span>
               </div>
+              <p>{route.reason}</p>
+              <span>
+                {route.intersections.join(" -> ")}
+              </span>
+              <span>
+                Congestion score {route.congestion_score} | ETA {route.estimated_travel_minutes} min
+              </span>
             </article>
           ))}
         </div>
+
+        <p className="subtle-note enforcement-summary">
+          {record.signal_override_guidance}
+        </p>
+
+        {record.status !== "Controller approved" ? (
+          <form className="request-form" onSubmit={handleApprovalSubmit}>
+            <div className="section-head">
+              <h3>Controller approval</h3>
+              <span className="subtle-note">
+                Required before signal override is activated
+              </span>
+            </div>
+
+            <div className="field-grid">
+              <label className="field">
+                <span>Approved route</span>
+                <select
+                  name="routeId"
+                  onChange={handleApprovalChange}
+                  value={approvalForm.routeId}
+                >
+                  {record.route_suggestions.map((route) => (
+                    <option key={route.route_id} value={route.route_id}>
+                      {route.label} - {route.intersections.join(" -> ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Controller name</span>
+                <input
+                  name="controllerName"
+                  onChange={handleApprovalChange}
+                  placeholder="Traffic police / control room officer"
+                  value={approvalForm.controllerName}
+                />
+              </label>
+
+              <label className="field">
+                <span>Controller role</span>
+                <input
+                  name="controllerRole"
+                  onChange={handleApprovalChange}
+                  placeholder="Traffic inspector / corridor controller"
+                  value={approvalForm.controllerRole}
+                />
+              </label>
+
+              <label className="field">
+                <span>Camera reference</span>
+                <input
+                  name="cameraReference"
+                  onChange={handleApprovalChange}
+                  placeholder="HQ camera ref / ANPR confirmation ID"
+                  value={approvalForm.cameraReference}
+                />
+              </label>
+
+              <label className="field">
+                <span>Controller API key</span>
+                <input
+                  name="apiKey"
+                  onChange={handleApprovalChange}
+                  placeholder="Government approval key"
+                  value={approvalForm.apiKey}
+                />
+              </label>
+            </div>
+
+            {approvalError && (
+              <div className="banner error-banner">{approvalError}</div>
+            )}
+
+            <div className="button-row">
+              <button className="button button-primary" disabled={approving} type="submit">
+                {approving ? "Approving..." : "Approve And Activate Corridor"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="section-head">
+              <h3>Activated corridor sequence</h3>
+              <span className="subtle-note">
+                Approved by {record.controller_approval?.controller_name} via{" "}
+                {record.controller_approval?.approval_method}
+              </span>
+            </div>
+
+            <div className="timeline">
+              {record.corridor.map((step) => (
+                <article className="timeline-item" key={`${record.request_id}-${step.intersection_id}`}>
+                  <div className="timeline-dot" />
+                  <div className="timeline-content">
+                    <strong>{step.intersection_name}</strong>
+                    <span>
+                      {formatTimestamp(step.green_from)} to {formatTimestamp(step.green_to)}
+                    </span>
+                    <span className="timeline-detail">
+                      {step.on_resolved_route ? "Approved route corridor" : "Support intersection"}{" "}
+                      | {formatMovementAlignment(step.movement_alignment)}
+                      {step.target_flow_direction
+                        ? ` | ${formatDirection(step.target_flow_direction)} flow checked`
+                        : ""}
+                      {step.approaching_vehicle_share != null
+                        ? ` | ${formatShare(step.approaching_vehicle_share)} inbound share`
+                        : ""}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="button-row">
           <button className="button button-primary" onClick={onReset}>
@@ -705,6 +1087,8 @@ export default function App() {
   const [record, setRecord] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [approving, setApproving] = useState(false);
+  const [approvalError, setApprovalError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -736,6 +1120,7 @@ export default function App() {
     try {
       setSubmitting(true);
       setSubmitError("");
+      setApprovalError("");
       const createdRecord = await createEmergencyRequest(formValues);
       setRecord(createdRecord);
       setScreen("confirmation");
@@ -749,10 +1134,31 @@ export default function App() {
     }
   }
 
+  async function handleApproveRequest(formValues) {
+    if (!record) {
+      return;
+    }
+
+    try {
+      setApproving(true);
+      setApprovalError("");
+      const approvedRecord = await approveEmergencyRequest(record.request_id, formValues);
+      setRecord(approvedRecord);
+      const refreshedDashboard = await fetchDashboard();
+      setDashboard(refreshedDashboard);
+      setDashboardError("");
+    } catch (error) {
+      setApprovalError(error.message);
+    } finally {
+      setApproving(false);
+    }
+  }
+
   function resetFlow() {
     setScreen("landing");
     setRecord(null);
     setSubmitError("");
+    setApprovalError("");
   }
 
   return (
@@ -787,11 +1193,14 @@ export default function App() {
       )}
 
       {screen === "confirmation" && record && (
-        <ConfirmationPanel
-          dashboard={dashboard}
-          onReset={resetFlow}
-          record={record}
-        />
+          <ConfirmationPanel
+            dashboard={dashboard}
+            approvalError={approvalError}
+            approving={approving}
+            onApprove={handleApproveRequest}
+            onReset={resetFlow}
+            record={record}
+          />
       )}
     </div>
   );
