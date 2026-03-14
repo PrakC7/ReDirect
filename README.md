@@ -280,5 +280,6 @@ http://127.0.0.1:8000/docs
 
 ## Documentation
 
+- [Selection brief](docs/selection_brief.md)
 - [Government evaluation notes](docs/government_evaluation.md)
 - [Project proposal](docs/samadhan_saathi_proposal.md)
