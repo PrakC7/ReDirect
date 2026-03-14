@@ -8,6 +8,7 @@ The current version keeps the same project concept, but improves how decisions a
 - vehicle motion direction is used to decide whether traffic is actually moving toward a target area
 - normal signal timing uses the same logic as emergency routing
 - emergency corridors are generated on top of the live network optimisation instead of using a separate isolated flow
+- optional wrong-way rule enforcement can be enabled only at specific locations that already have high-quality cameras
 
 ## What Is New In This Version
 
@@ -15,6 +16,7 @@ The current version keeps the same project concept, but improves how decisions a
 - Incoming pressure scoring based on nearby intersections and inbound vehicle flow
 - Radius-first prioritisation so close intersections are handled before the remaining network
 - Direction-aware emergency corridor sequencing
+- Optional wrong-way violation detection with saved vehicle records for selected high-quality camera sites
 - Updated dashboard preview showing inbound pressure and flow direction context
 - Cleaner repository structure and preview-ready FastAPI + React demo
 
@@ -38,6 +40,7 @@ This makes the prototype closer to a practical control-room workflow instead of 
 3. Nearby intersections inside the `20 km` radius are checked.
 4. Vehicle motion direction is used to estimate inbound traffic pressure.
 5. Signal priority and green timings are updated using both density and directional flow.
+6. At selected high-quality camera sites, optional wrong-way detection can save violating vehicle records for enforcement review.
 
 ### Emergency Movement Workflow
 
@@ -68,6 +71,7 @@ The dashboard now highlights:
 - live signal-priority cards
 - incoming traffic pressure per intersection
 - dominant inbound direction from nearby intersections
+- optional wrong-way alerts from selected high-quality camera locations
 - emergency request submission and confirmation flow
 - corridor sequence reasoning with radius-first and movement-alignment details
 
@@ -97,6 +101,17 @@ That makes prioritisation more realistic for both daily traffic balancing and em
 
 Emergency requests still remain a core part of the project. The difference is that corridor generation now reuses the same live optimisation model used by the dashboard.
 
+### Optional Wrong-Way Rule Enforcement
+
+ReDirect can also support traffic-rule enforcement as an optional layer. At selected intersections where high-quality cameras are already installed, the system can:
+
+- detect vehicles moving in the wrong direction
+- save compact vehicle information for review
+- surface wrong-way alerts in the control-room dashboard
+- support enforcement without changing the low-cost baseline design used across the wider network
+
+This is intentionally optional. The core project still works with lightweight traffic metadata and does not depend on expensive camera hardware everywhere.
+
 ### Edge-Friendly Design
 
 The project is built around lightweight vehicle metadata rather than heavy full-video processing, making it easier to imagine edge-device deployment.
@@ -111,6 +126,7 @@ The project is built around lightweight vehicle metadata rather than heavy full-
 - historical congestion
 - road priority weight
 - movement profile by direction
+- optional high-quality camera evidence at selected locations
 
 ### Decision Layers
 
@@ -118,7 +134,8 @@ The project is built around lightweight vehicle metadata rather than heavy full-
 2. `network_flow.py` estimates inbound pressure from nearby intersections.
 3. `optimization.py` combines density and directional pressure into signal priority.
 4. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
-5. `emergency.py` turns the ranked intersections into staged green windows.
+5. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
+6. `emergency.py` turns the ranked intersections into staged green windows.
 
 ## Project Structure
 
@@ -139,6 +156,7 @@ The project is built around lightweight vehicle metadata rather than heavy full-
 |   |   |   |-- emergency.py
 |   |   |   |-- intersection_priority.py
 |   |   |   |-- network_flow.py
+|   |   |   |-- rule_enforcement.py
 |   |   |   `-- optimization.py
 |   |   |-- main.py
 |   |   `-- schemas.py
@@ -215,6 +233,7 @@ http://127.0.0.1:8000/docs
 - `POST /api/v1/emergency/requests`
 - `GET /api/v1/emergency/requests`
 - `GET /api/v1/gov/emergency/active`
+- `GET /api/v1/gov/violations/wrong-way`
 - `POST /api/v1/emergency/alert`
 
 ## Current Prototype Notes
@@ -222,6 +241,7 @@ http://127.0.0.1:8000/docs
 - The backend currently uses in-memory storage for active emergency requests.
 - Live traffic values are simulated for demo purposes.
 - Directional movement is represented using structured motion profiles in the sample network.
+- Wrong-way violation records are shown as an optional add-on only for selected intersections with existing high-quality cameras.
 - The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.
 
 ## Documentation
