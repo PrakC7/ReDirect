@@ -144,6 +144,24 @@ ReDirect can also preprocess grouped traffic summaries in a very compact form. F
 - count code `1` can represent about `10` northbound vehicles with an average speed near `40 km/h`
 - count code `2` can represent about `20` southbound vehicles with an average speed near `30 km/h`
 
+To keep the packet both compact and more stable:
+
+- each direction can keep up to `7` extra vehicles separately on top of the `10s` count code
+- when the extra count reaches `8`, it rolls into the next count code and the separate remainder resets
+- for speed protection, full bucket codes use a safer divisor assumption such as `10 -> 8`, `20 -> 18`, and `30 -> 28`
+
+That means a direction with `17` vehicles can be sent as:
+
+- count code `1`
+- separate vehicles `7`
+
+If one more vehicle is added in the same direction, it becomes:
+
+- count code `2`
+- separate vehicles `0`
+
+This helps the system react quickly while still preserving more usable flow information than a plain rounded count.
+
 This preprocessing can run:
 
 - on the external roadside device attached to the camera

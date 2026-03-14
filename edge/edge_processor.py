@@ -1,6 +1,5 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from math import ceil
 
 
 @dataclass(slots=True)
@@ -36,6 +35,7 @@ class LowBandwidthTelemetry:
 class DirectionalCountCode:
     direction: str
     vehicle_count_code: int
+    separate_vehicle_count: int
     average_speed_kph_x10: int
 
 
@@ -48,6 +48,39 @@ class DirectionalCountCodePacket:
     wrong_way_count: int
     captured_epoch: int
     flows: list[DirectionalCountCode]
+
+
+def _encode_directional_vehicle_count(
+    actual_vehicle_count: int,
+    count_unit_size: int,
+) -> dict[str, int]:
+    if count_unit_size <= 0:
+        raise ValueError("count_unit_size must be greater than zero")
+
+    vehicle_count_code, separate_vehicle_count = divmod(
+        actual_vehicle_count,
+        count_unit_size,
+    )
+    rollover_threshold = max(count_unit_size - 2, 1)
+    if separate_vehicle_count >= rollover_threshold:
+        vehicle_count_code += 1
+        separate_vehicle_count = 0
+
+    estimated_vehicle_count = vehicle_count_code * count_unit_size
+    reported_vehicle_count = estimated_vehicle_count + separate_vehicle_count
+    speed_average_divisor = (
+        max(estimated_vehicle_count - 2, 1)
+        if estimated_vehicle_count and separate_vehicle_count == 0
+        else max(reported_vehicle_count, 1)
+    )
+
+    return {
+        "vehicle_count_code": vehicle_count_code,
+        "separate_vehicle_count": separate_vehicle_count,
+        "estimated_vehicle_count": estimated_vehicle_count,
+        "reported_vehicle_count": reported_vehicle_count,
+        "speed_average_divisor": speed_average_divisor,
+    }
 
 
 def compress_reading(reading: EdgeReading) -> dict[str, object]:
@@ -96,20 +129,28 @@ def build_directional_count_code_packet(
 
     direction_counts = reading.directional_vehicle_count or {}
     speed_by_direction = reading.average_speed_by_direction or {}
-    flow_units = [
-        DirectionalCountCode(
-            direction=direction,
-            vehicle_count_code=ceil(vehicle_count / count_unit_size),
-            average_speed_kph_x10=int(
-                round(
-                    speed_by_direction.get(direction, reading.average_speed_kph or 0.0)
-                    * 10
-                )
-            ),
+    flow_units = []
+    for direction, vehicle_count in sorted(direction_counts.items()):
+        if vehicle_count <= 0:
+            continue
+
+        encoding = _encode_directional_vehicle_count(vehicle_count, count_unit_size)
+        flow_units.append(
+            DirectionalCountCode(
+                direction=direction,
+                vehicle_count_code=encoding["vehicle_count_code"],
+                separate_vehicle_count=encoding["separate_vehicle_count"],
+                average_speed_kph_x10=int(
+                    round(
+                        speed_by_direction.get(
+                            direction,
+                            reading.average_speed_kph or 0.0,
+                        )
+                        * 10
+                    )
+                ),
+            )
         )
-        for direction, vehicle_count in sorted(direction_counts.items())
-        if vehicle_count > 0
-    ]
     packet = DirectionalCountCodePacket(
         intersection_id=reading.intersection_id,
         sequence_id=sequence_id,
@@ -135,12 +176,18 @@ def decode_directional_count_code_packet(
 
     for flow in flow_units:
         direction = str(flow["direction"])
-        estimated_vehicle_count = int(flow["vehicle_count_code"]) * count_unit_size
+        encoding = _encode_directional_vehicle_count(
+            int(flow["vehicle_count_code"]) * count_unit_size
+            + int(flow.get("separate_vehicle_count", 0)),
+            count_unit_size,
+        )
         average_speed_kph = round(int(flow["average_speed_kph_x10"]) / 10, 1)
-        directional_vehicle_count[direction] = estimated_vehicle_count
+        directional_vehicle_count[direction] = encoding["reported_vehicle_count"]
         average_speed_by_direction[direction] = average_speed_kph
-        weighted_speed_total += estimated_vehicle_count * average_speed_kph
-        weighted_vehicle_total += estimated_vehicle_count
+        weighted_speed_total += (
+            encoding["speed_average_divisor"] * average_speed_kph
+        )
+        weighted_vehicle_total += encoding["speed_average_divisor"]
 
     return {
         "intersection_id": int(packet["intersection_id"]),
