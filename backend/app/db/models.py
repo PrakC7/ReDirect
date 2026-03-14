@@ -16,6 +16,9 @@ class Intersection:
     live_vehicle_count: int
     signal_group: str
     movement_profile: dict[str, int]
+    enforcement_camera_enabled: bool = False
+    expected_flow_direction: str | None = None
+    enforcement_camera_quality: str | None = None
 
 
 @dataclass(slots=True)

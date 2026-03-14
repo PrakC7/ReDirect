@@ -215,6 +215,7 @@ textarea {
 
 .signal-list,
 .request-list,
+.alert-list,
 .timeline {
   display: grid;
   gap: 12px;
@@ -222,6 +223,7 @@ textarea {
 
 .signal-card,
 .request-card,
+.alert-card,
 .timeline-item {
   display: flex;
   gap: 14px;
@@ -240,6 +242,7 @@ textarea {
 
 .signal-card p,
 .request-card p,
+.alert-card p,
 .timeline-content span {
   margin: 6px 0 0;
   color: var(--muted);
@@ -247,8 +250,21 @@ textarea {
 }
 
 .flow-note,
+.enforcement-note,
+.enforcement-summary,
 .timeline-detail {
   line-height: 1.5;
+}
+
+.alert-card {
+  flex-direction: column;
+}
+
+.alert-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .signal-meta,

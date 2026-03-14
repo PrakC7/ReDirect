@@ -116,6 +116,7 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
         <span className="chip">Direction-aware flow screening</span>
         <span className="chip">Emergency corridor requests</span>
         <span className="chip">20 km nearby junction scan</span>
+        <span className="chip">Optional wrong-way enforcement</span>
       </div>
 
       <div className="metric-grid">
@@ -170,6 +171,14 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
                     ? `${formatDirection(intersection.primary_inbound_direction)} inflow drives ${formatShare(intersection.nearby_inbound_vehicle_share)} of nearby pressure`
                     : "No dominant inbound direction detected in the nearby network yet"}
                 </p>
+                {intersection.optional_enforcement_enabled && (
+                  <p className="enforcement-note">
+                    Optional HQ camera monitors {formatDirection(intersection.expected_flow_direction)} flow
+                    {intersection.wrong_way_alert_count > 0
+                      ? ` | ${intersection.wrong_way_alert_count} wrong-way records saved`
+                      : " | no current wrong-way records"}
+                  </p>
+                )}
               </div>
               <div className="signal-meta">
                 <span className={`status-pill status-${intersection.status.toLowerCase()}`}>
@@ -195,6 +204,7 @@ function LandingSection({ dashboard, dashboardError, onStart }) {
 
 function OperationsPanel({ dashboard }) {
   const requests = dashboard?.active_requests ?? [];
+  const wrongWayAlerts = dashboard?.wrong_way_alerts ?? [];
 
   return (
     <aside className="panel sidebar-panel">
@@ -221,6 +231,16 @@ function OperationsPanel({ dashboard }) {
           value={requests.length}
           detail="Requests in the emergency priority pool"
         />
+        <MetricCard
+          label="HQ camera sites"
+          value={dashboard?.enforcement_enabled_intersections ?? "--"}
+          detail="Optional enforcement only where high-quality cameras already exist"
+        />
+        <MetricCard
+          label="Wrong-way alerts"
+          value={dashboard?.wrong_way_violation_count ?? "--"}
+          detail="Saved vehicle records from optional enforcement cameras"
+        />
       </div>
 
       <div className="ops-section">
@@ -246,6 +266,40 @@ function OperationsPanel({ dashboard }) {
           <div className="empty-state">
             No active emergency requests right now. New requests appear here
             after submission.
+          </div>
+        )}
+      </div>
+
+      <div className="ops-section">
+        <h3>Optional rule enforcement</h3>
+        <p className="subtle-note enforcement-summary">
+          {dashboard?.optional_enforcement_note ||
+            "Optional wrong-way enforcement can be enabled only at selected sites with existing high-quality cameras."}
+        </p>
+        {wrongWayAlerts.length > 0 ? (
+          <div className="alert-list">
+            {wrongWayAlerts.map((alert) => (
+              <article className="alert-card" key={`${alert.intersection_id}-${alert.vehicle_identifier}`}>
+                <div className="alert-header">
+                  <strong>{alert.intersection_name}</strong>
+                  <span className="status-pill status-high">Wrong-way</span>
+                </div>
+                <p>
+                  {alert.vehicle_type} {alert.vehicle_identifier}
+                </p>
+                <span>
+                  Observed {formatDirection(alert.observed_direction)} | allowed {formatDirection(alert.allowed_direction)}
+                </span>
+                <span>
+                  {alert.evidence_source} | confidence {Math.round(alert.confidence * 100)}%
+                </span>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            No wrong-way alerts are saved right now. This optional layer stays
+            limited to specific high-quality camera locations.
           </div>
         )}
       </div>
@@ -706,7 +760,7 @@ export default function App() {
       <header className="topbar">
         <div>
           <span className="eyebrow">Smart traffic optimisation prototype</span>
-          <strong>Emergency Traffic Priority Request Portal</strong>
+          <strong>Traffic Optimisation and Priority Control Portal</strong>
         </div>
         <span className="subtle-note">FastAPI + React demo workflow</span>
       </header>

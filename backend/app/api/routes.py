@@ -11,6 +11,7 @@ from app.schemas import (
     EmergencyRequestRecord,
     IntersectionSnapshot,
     LegacyEmergencyAlert,
+    WrongWayViolationRecord,
 )
 from app.services.density import calculate_density_score, get_density_status
 from app.services.emergency import EmergencyRequestStore, build_corridor
@@ -21,6 +22,7 @@ from app.services.intersection_priority import (
 )
 from app.services.network_flow import build_network_flow_insights
 from app.services.optimization import build_signal_plan, calculate_priority_score
+from app.services.rule_enforcement import build_wrong_way_enforcement
 
 router = APIRouter()
 emergency_store = EmergencyRequestStore(settings.emergency_ttl_seconds)
@@ -44,6 +46,9 @@ SAMPLE_INTERSECTIONS = [
             "eastbound": 8,
             "westbound": 10,
         },
+        enforcement_camera_enabled=True,
+        expected_flow_direction="southbound",
+        enforcement_camera_quality="Existing high-definition ANPR camera",
     ),
     Intersection(
         id=102,
@@ -82,6 +87,9 @@ SAMPLE_INTERSECTIONS = [
             "eastbound": 11,
             "westbound": 35,
         },
+        enforcement_camera_enabled=True,
+        expected_flow_direction="westbound",
+        enforcement_camera_quality="Existing high-definition corridor camera",
     ),
     Intersection(
         id=104,
@@ -161,13 +169,38 @@ def _build_priority_score_lookup(
     }
 
 
-def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
+def _build_live_network_context() -> tuple[
+    list[tuple[Intersection, float, dict[str, int]]],
+    list[Intersection],
+    dict[int, dict[str, float | str | int | None]],
+    dict[int, dict[str, object]],
+    list[WrongWayViolationRecord],
+    int,
+]:
     state = _build_network_state()
     live_intersections = [intersection for intersection, _, _ in state]
     network_flow_insights = build_network_flow_insights(
         live_intersections,
         PRIORITY_RADIUS_KM,
     )
+    wrong_way_by_intersection, wrong_way_alerts, enforcement_enabled_count = (
+        build_wrong_way_enforcement(live_intersections)
+    )
+    return (
+        state,
+        live_intersections,
+        network_flow_insights,
+        wrong_way_by_intersection,
+        wrong_way_alerts,
+        enforcement_enabled_count,
+    )
+
+
+def _build_intersection_snapshots(
+    state: list[tuple[Intersection, float, dict[str, int]]],
+    network_flow_insights: dict[int, dict[str, float | str | int | None]],
+    wrong_way_by_intersection: dict[int, dict[str, object]],
+) -> list[IntersectionSnapshot]:
     directional_pressure_scores = {
         intersection_id: float(insight["incoming_pressure_score"])
         for intersection_id, insight in network_flow_insights.items()
@@ -185,6 +218,7 @@ def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
         intersection = by_intersection_id[intersection_id]
         density_score = density_by_intersection[intersection_id]
         network_insight = network_flow_insights[intersection_id]
+        enforcement_insight = wrong_way_by_intersection[intersection_id]
         snapshots.append(
             IntersectionSnapshot(
                 id=intersection.id,
@@ -203,6 +237,18 @@ def _build_intersection_snapshots() -> list[IntersectionSnapshot]:
                 nearby_inbound_vehicle_share=float(
                     network_insight["nearby_inbound_vehicle_share"]
                 ),
+                optional_enforcement_enabled=bool(
+                    enforcement_insight["optional_enforcement_enabled"]
+                ),
+                expected_flow_direction=enforcement_insight[
+                    "expected_flow_direction"
+                ],
+                wrong_way_alert_count=int(
+                    enforcement_insight["wrong_way_alert_count"]
+                ),
+                wrong_way_vehicle_share=float(
+                    enforcement_insight["wrong_way_vehicle_share"]
+                ),
                 recommended_green_seconds=green_time,
                 status=get_density_status(density_score),
             )
@@ -215,12 +261,14 @@ def _build_corridor_plan_context(
     origin: str,
     destination: str,
 ) -> tuple[list[Intersection], list]:
-    state = _build_network_state()
-    live_intersections = [intersection for intersection, _, _ in state]
-    network_flow_insights = build_network_flow_insights(
+    (
+        state,
         live_intersections,
-        PRIORITY_RADIUS_KM,
-    )
+        network_flow_insights,
+        _wrong_way_by_intersection,
+        _wrong_way_alerts,
+        _enforcement_enabled_count,
+    ) = _build_live_network_context()
     priority_scores = _build_priority_score_lookup(state, network_flow_insights)
     anchor = resolve_anchor_intersection(
         f"{origin} {destination}",
@@ -242,6 +290,14 @@ def health_check() -> dict[str, str]:
 
 @router.get("/dashboard", response_model=DashboardSnapshot)
 def get_dashboard_snapshot() -> DashboardSnapshot:
+    (
+        state,
+        _live_intersections,
+        network_flow_insights,
+        wrong_way_by_intersection,
+        wrong_way_alerts,
+        enforcement_enabled_count,
+    ) = _build_live_network_context()
     active_requests = emergency_store.list_active_summaries()
     average_clearance_gain = (
         round(
@@ -258,8 +314,19 @@ def get_dashboard_snapshot() -> DashboardSnapshot:
         active_emergency_count=len(active_requests),
         average_clearance_gain_minutes=average_clearance_gain,
         priority_radius_km=int(PRIORITY_RADIUS_KM),
-        intersections=_build_intersection_snapshots(),
+        enforcement_enabled_intersections=enforcement_enabled_count,
+        wrong_way_violation_count=len(wrong_way_alerts),
+        optional_enforcement_note=(
+            "Optional wrong-way enforcement is active only at selected "
+            "locations where high-quality cameras are already installed."
+        ),
+        intersections=_build_intersection_snapshots(
+            state,
+            network_flow_insights,
+            wrong_way_by_intersection,
+        ),
         active_requests=active_requests,
+        wrong_way_alerts=wrong_way_alerts,
     )
 
 
@@ -303,6 +370,26 @@ def list_active_emergencies(
     if x_api_key != settings.gov_api_key:
         raise HTTPException(status_code=403, detail="Forbidden")
     return emergency_store.list_active()
+
+
+@router.get(
+    "/gov/violations/wrong-way",
+    response_model=list[WrongWayViolationRecord],
+)
+def list_wrong_way_violations(
+    x_api_key: str = Header(...),
+) -> list[WrongWayViolationRecord]:
+    if x_api_key != settings.gov_api_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    (
+        _state,
+        _live_intersections,
+        _network_flow_insights,
+        _wrong_way_by_intersection,
+        wrong_way_alerts,
+        _enforcement_enabled_count,
+    ) = _build_live_network_context()
+    return wrong_way_alerts
 
 
 @router.post(

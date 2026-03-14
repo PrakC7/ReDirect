@@ -25,8 +25,24 @@ class IntersectionSnapshot(BaseModel):
     incoming_pressure_score: float
     primary_inbound_direction: str | None = None
     nearby_inbound_vehicle_share: float
+    optional_enforcement_enabled: bool = False
+    expected_flow_direction: str | None = None
+    wrong_way_alert_count: int = 0
+    wrong_way_vehicle_share: float = Field(default=0.0, ge=0.0, le=1.0)
     recommended_green_seconds: int
     status: str
+
+
+class WrongWayViolationRecord(BaseModel):
+    intersection_id: int
+    intersection_name: str
+    vehicle_type: str
+    vehicle_identifier: str
+    observed_direction: str
+    allowed_direction: str
+    captured_at: datetime
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    evidence_source: str
 
 
 class IntersectionPriorityStep(BaseModel):
@@ -96,8 +112,12 @@ class DashboardSnapshot(BaseModel):
     active_emergency_count: int
     average_clearance_gain_minutes: int
     priority_radius_km: int
+    enforcement_enabled_intersections: int
+    wrong_way_violation_count: int
+    optional_enforcement_note: str
     intersections: list[IntersectionSnapshot]
     active_requests: list[ActiveEmergencySummary]
+    wrong_way_alerts: list[WrongWayViolationRecord]
 
 
 class LegacyEmergencyAlert(BaseModel):
