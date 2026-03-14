@@ -42,9 +42,10 @@ This makes the prototype closer to a practical control-room workflow instead of 
 1. The backend simulates live vehicle counts for each intersection.
 2. Density scoring is calculated from lane count, road width, and congestion history.
 3. Nearby intersections inside the `20 km` radius are checked.
-4. Vehicle motion direction is used to estimate inbound traffic pressure.
-5. Signal priority and green timings are updated using both density and directional flow.
-6. At selected high-quality camera sites, optional wrong-way detection can save violating vehicle records for enforcement review.
+4. Local camera-storage servers separate recording input references from counting logic and keep only temporary numeric summaries inside the model.
+5. Vehicle motion direction is used to estimate inbound traffic pressure.
+6. Signal priority and green timings are updated using both density and directional flow.
+7. At selected high-quality camera sites, optional wrong-way detection can save violating vehicle records for enforcement review.
 
 ### Emergency Movement Workflow
 
@@ -134,13 +135,15 @@ The project is built around lightweight vehicle metadata rather than heavy full-
 
 Many city roads and junctions operate with limited or inconsistent connectivity. ReDirect addresses this smoothly by reusing the small local servers that already store camera feeds for specific area clusters. These preinstalled local servers can also handle ReDirect's five-minute aggregation role, so the project does not need separate new hardware at every location. These small servers can:
 
-- count vehicles locally
+- accept camera recording references from the local storage system without moving or deleting the original recordings
+- run counting locally as a separate step from input registration
 - estimate directional counts
 - combine those counts into compact count codes before upload
 - detect emergency presence from local inference
 - send only compact numeric values to the backend
 - keep the control room updated even before a high-bandwidth video stream is available
 - keep five-minute combined area snapshots instead of pushing every camera frame to the main optimiser
+- clear only the temporary model-generated summaries after a successful send to the main server
 
 Instead of depending on heavy data transfer, it can send packets such as:
 
@@ -192,6 +195,14 @@ At the camera-cluster level, the small server can keep decimal traffic values lo
 
 That means the main server receives already-combined directional flow summaries every few minutes, while the camera-level logic still keeps richer decimal estimates inside the local area server.
 
+The practical local flow is now split into three clear layers:
+
+1. `Camera input layer`: the local server receives only recording references and timestamps from the preinstalled camera-storage system.
+2. `Counting layer`: ReDirect converts those inputs into directional vehicle counts, speed estimates, emergency flags, and route-probability summaries.
+3. `Upload layer`: only the required numeric packet is sent to the main optimiser, and the temporary processed summaries are flushed right after a successful send.
+
+This keeps the prototype efficient and privacy-aware because the traffic optimiser never needs the full recording files for its routine signal decisions.
+
 ### Smart Use Of Existing Infrastructure
 
 ReDirect also fits well into mixed city infrastructure:
@@ -221,10 +232,11 @@ This helps the project stay efficient and affordable while still allowing strong
 3. `route_network.py` resolves road-linked prototype paths, nearby anchors, and emergency route options.
 4. `network_flow.py` estimates inbound pressure from nearby intersections.
 5. `optimization.py` combines density and directional pressure into signal priority.
-6. `edge_processor.py` shows how small local area servers can combine nearby camera feeds over a five-minute window, keep decimal probability flows locally, and then send ceiling-rounded packets in low-connectivity areas.
-7. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
-8. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
-9. `emergency.py` keeps requests pending until controller approval activates the corridor.
+6. `edge_processor.py` handles low-bandwidth count compression, five-minute area aggregation, and ceiling-rounded uploads.
+7. `local_area_server.py` separates camera input references from counting results, keeps only temporary numeric summaries inside the model, and clears them after a successful send.
+8. `intersection_priority.py` applies radius-first and motion-aware ordering for corridor logic.
+9. `rule_enforcement.py` optionally flags wrong-way violations where high-quality cameras already exist.
+10. `emergency.py` keeps requests pending until controller approval activates the corridor.
 
 ## Project Structure
 
@@ -254,7 +266,9 @@ This helps the project stay efficient and affordable while still allowing strong
 |   `-- run.py
 |-- docs
 |-- edge
-|   `-- edge_processor.py
+|   |-- __init__.py
+|   |-- edge_processor.py
+|   `-- local_area_server.py
 |-- frontend
 |   |-- src
 |   |   |-- App.jsx
@@ -337,6 +351,8 @@ http://127.0.0.1:8000/docs
 - Emergency corridors remain pending until a controller approves the route after camera confirmation of the marked vehicle.
 - Wrong-way violation records are shown as an optional add-on only for selected intersections with existing high-quality cameras.
 - The edge module includes low-bandwidth packet examples for preinstalled small local camera-storage servers that send numeric traffic summaries and grouped directional count codes instead of full video streams.
+- The local area server flow now separates camera input registration from counting and upload, then clears only temporary model-generated summaries after each successful send.
+- Original camera recordings remain in the existing local storage system and are not deleted by the ReDirect model layer.
 - The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.
 
 ## Documentation
