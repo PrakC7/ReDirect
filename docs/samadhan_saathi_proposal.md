@@ -102,6 +102,14 @@ ReDirect can work by reusing the small local servers that already store area cam
 
 This allows deployment even in corridors where continuous heavy video transfer is undesirable.
 
+This specifically solves three practical issues:
+
+- slow central response caused by too much camera data being pushed upstream
+- unreliable performance in low-connectivity corridors
+- unnecessary central handling of local enforcement events such as wrong-way movement
+
+The working method is simple: the local server reads camera references, counts vehicles from the locally stored recordings, combines the area traffic summary every two minutes, sends only the required traffic data to the main optimiser, and keeps wrong-way violations for local control-room action only.
+
 ### 5. Optional Premium Enforcement Layer
 
 The project keeps its low-cost baseline intact, while allowing selected high-value intersections with existing high-quality cameras to support:
@@ -118,7 +126,9 @@ This selective feature improves enforcement value without making premium hardwar
 
 - receives camera input from the local camera-storage server
 - performs lightweight local summarisation
-- sends numeric traffic values or compact metadata
+- combines vehicle counts, direction, and speed into a two-minute area summary
+- sends only numeric traffic values or compact metadata to the central optimiser
+- keeps wrong-way violation handling at the local level for area controllers
 
 ### Intersection Intelligence Layer
 

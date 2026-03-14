@@ -41,6 +41,15 @@ This balance of innovation and practicality makes the project stronger than solu
 
 This makes rollout more realistic for phased government deployment.
 
+### 4A. What The Local-Server Model Solves
+
+- avoids sending continuous raw video to the central optimiser
+- improves practical response speed by combining camera data at the area level every two minutes
+- supports weak-connectivity corridors with compact numeric uploads
+- leaves wrong-way enforcement with the local area control room instead of mixing it into central signal decisions
+
+In practice, this means the central server receives only the traffic information needed for optimisation, while the local server handles area-level counting and local rule-enforcement visibility.
+
 ### 5. Feasible Deployment Strategy
 
 The project is designed to support phased implementation:
@@ -63,6 +72,7 @@ The current prototype already demonstrates:
 - direction-aware corridor logic
 - optional wrong-way alert records
 - low-connectivity edge telemetry concept using compact numeric packets
+- two-minute local camera-server summaries that reduce central processing load
 
 This shows that the project is not only conceptual but also implementation-oriented.
 

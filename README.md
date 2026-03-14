@@ -129,6 +129,23 @@ This is intentionally optional. The core project still works with lightweight tr
 
 The project is built around lightweight vehicle metadata rather than heavy full-video processing, making it easier to imagine edge-device deployment.
 
+### What This Local-Server Design Solves
+
+- reduces central-server load because every camera does not send raw footage upstream
+- improves response speed because local servers combine traffic counts every two minutes before forwarding
+- works better in low-connectivity areas because only compact numeric traffic summaries are transmitted
+- keeps enforcement practical because wrong-way violations stay with the local area control room where action is actually taken
+- avoids extra infrastructure cost because the same preinstalled camera-storage servers are reused for preprocessing
+
+### How It Works Briefly
+
+1. Cameras keep storing recordings in the existing local server for the area.
+2. ReDirect reads only the recording references and counts vehicles locally.
+3. The local server combines direction, speed, and route-probability data for that cluster.
+4. Every two minutes it sends only the required traffic-summary packet to the main optimiser.
+5. After a successful send, only the temporary processed traffic summaries are cleared from the model layer.
+6. Original recordings stay in their normal storage, and wrong-way violations remain available only to the local control room.
+
 ## Real-World Challenges ReDirect Solves
 
 ### Low-Connectivity Traffic Corridors
