@@ -132,7 +132,7 @@ The project is built around lightweight vehicle metadata rather than heavy full-
 
 ### Low-Connectivity Traffic Corridors
 
-Many city roads and junctions operate with limited or inconsistent connectivity. ReDirect addresses this smoothly by using small local servers for specific camera clusters near each controlled area. These small servers can:
+Many city roads and junctions operate with limited or inconsistent connectivity. ReDirect addresses this smoothly by reusing the small local servers that already store camera feeds for specific area clusters. These preinstalled local servers can also handle ReDirect's five-minute aggregation role, so the project does not need separate new hardware at every location. These small servers can:
 
 - count vehicles locally
 - estimate directional counts
@@ -196,10 +196,10 @@ That means the main server receives already-combined directional flow summaries 
 
 ReDirect also fits well into mixed city infrastructure:
 
-- most intersections can run on lightweight counting devices and numeric summaries
+- most intersections can reuse their local camera-storage servers for numeric summaries and area-level aggregation
 - selected intersections with high-quality cameras can additionally support optional wrong-way enforcement and saved vehicle records
 
-This helps the project stay efficient and affordable while still allowing stronger enforcement at important locations where better hardware is already installed.
+This helps the project stay efficient and affordable while still allowing stronger enforcement at important locations where better hardware is already installed. Because the local camera-storage servers are already preinstalled for area monitoring, the same machines can be reused for ReDirect preprocessing without creating a major additional infrastructure cost.
 
 ## Optimisation Logic
 
@@ -336,7 +336,7 @@ http://127.0.0.1:8000/docs
 - Emergency submission is blocked unless origin and destination are verified from GPS or a map-picked location.
 - Emergency corridors remain pending until a controller approves the route after camera confirmation of the marked vehicle.
 - Wrong-way violation records are shown as an optional add-on only for selected intersections with existing high-quality cameras.
-- The edge module includes low-bandwidth packet examples for small local camera servers that send numeric traffic summaries and grouped directional count codes instead of full video streams.
+- The edge module includes low-bandwidth packet examples for preinstalled small local camera-storage servers that send numeric traffic summaries and grouped directional count codes instead of full video streams.
 - The AI and edge folders show how metadata can feed the traffic control layer without requiring a heavy production deployment.
 
 ## Documentation

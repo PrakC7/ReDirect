@@ -1,4 +1,3 @@
-from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from math import ceil
@@ -99,6 +98,26 @@ class AreaSmallServerSnapshot:
     flows: list[AreaFlowAllocation]
 
 
+@dataclass(slots=True)
+class AreaSmallServerState:
+    area_id: str
+    controlled_intersection_id: int
+    window_minutes: int
+    priority_radius_km: float
+    window_started_at: datetime
+    last_updated_at: datetime
+    observation_count: int = 0
+    decimal_directional_vehicle_count: dict[str, float] = field(
+        default_factory=dict
+    )
+    decimal_target_vehicle_count: dict[int, float] = field(default_factory=dict)
+    speed_totals_by_direction: dict[str, float] = field(default_factory=dict)
+    speed_weights_by_direction: dict[str, float] = field(default_factory=dict)
+    emergency_detected: bool = False
+    wrong_way_count: int = 0
+    flow_summary: dict[str, dict[str, float]] = field(default_factory=dict)
+
+
 def _encode_directional_vehicle_count(
     actual_vehicle_count: int,
     count_unit_size: int,
@@ -175,6 +194,24 @@ def _allocation_boost(option_count: int) -> float:
     return 1.0
 
 
+def create_area_small_server_state(
+    area_id: str,
+    controlled_intersection_id: int,
+    generated_at: datetime | None = None,
+    window_minutes: int = 5,
+    priority_radius_km: float = 20.0,
+) -> AreaSmallServerState:
+    snapshot_time = generated_at or datetime.utcnow()
+    return AreaSmallServerState(
+        area_id=area_id,
+        controlled_intersection_id=controlled_intersection_id,
+        window_minutes=window_minutes,
+        priority_radius_km=priority_radius_km,
+        window_started_at=snapshot_time,
+        last_updated_at=snapshot_time,
+    )
+
+
 def allocate_camera_flow(
     reading: CameraFlowReading,
     priority_radius_km: float = 20.0,
@@ -205,6 +242,126 @@ def allocate_camera_flow(
     ]
 
 
+def update_area_small_server_state(
+    state: AreaSmallServerState,
+    reading: CameraFlowReading,
+) -> bool:
+    if reading.area_id != state.area_id:
+        return False
+    if reading.controlled_intersection_id != state.controlled_intersection_id:
+        return False
+    if reading.captured_at < state.window_started_at:
+        return False
+
+    allocations = allocate_camera_flow(reading, state.priority_radius_km)
+    state.last_updated_at = max(state.last_updated_at, reading.captured_at)
+    state.observation_count += 1
+    state.emergency_detected = state.emergency_detected or reading.emergency_detected
+    state.wrong_way_count += reading.wrong_way_count
+
+    if not allocations:
+        return False
+
+    for allocation in allocations:
+        state.decimal_directional_vehicle_count[allocation.direction] = (
+            state.decimal_directional_vehicle_count.get(allocation.direction, 0.0)
+            + allocation.expected_vehicle_count
+        )
+        state.decimal_target_vehicle_count[allocation.target_intersection_id] = (
+            state.decimal_target_vehicle_count.get(
+                allocation.target_intersection_id,
+                0.0,
+            )
+            + allocation.expected_vehicle_count
+        )
+
+        summary_key = (
+            f"{allocation.direction}|{allocation.target_intersection_id}"
+        )
+        summary = state.flow_summary.setdefault(
+            summary_key,
+            {
+                "direction": allocation.direction,
+                "target_intersection_id": float(
+                    allocation.target_intersection_id
+                ),
+                "probability_total": 0.0,
+                "allocation_count": 0.0,
+                "expected_vehicle_count": 0.0,
+                "distance_km": allocation.distance_km,
+            },
+        )
+        summary["probability_total"] += allocation.routing_probability
+        summary["allocation_count"] += 1.0
+        summary["expected_vehicle_count"] += allocation.expected_vehicle_count
+        summary["distance_km"] = min(
+            summary["distance_km"],
+            allocation.distance_km,
+        )
+
+        if reading.average_speed_kph is not None:
+            state.speed_totals_by_direction[allocation.direction] = (
+                state.speed_totals_by_direction.get(allocation.direction, 0.0)
+                + (allocation.expected_vehicle_count * reading.average_speed_kph)
+            )
+            state.speed_weights_by_direction[allocation.direction] = (
+                state.speed_weights_by_direction.get(allocation.direction, 0.0)
+                + allocation.expected_vehicle_count
+            )
+
+    return True
+
+
+def snapshot_from_area_small_server_state(
+    state: AreaSmallServerState,
+) -> dict[str, object]:
+    average_speed_by_direction = {
+        direction: round(
+            state.speed_totals_by_direction[direction]
+            / max(state.speed_weights_by_direction[direction], 1.0),
+            1,
+        )
+        for direction in state.speed_totals_by_direction
+        if state.speed_weights_by_direction.get(direction, 0.0) > 0.0
+    }
+    flows = [
+        AreaFlowAllocation(
+            camera_id="aggregated-local-server",
+            direction=str(summary["direction"]),
+            target_intersection_id=int(summary["target_intersection_id"]),
+            routing_probability=round(
+                summary["probability_total"]
+                / max(summary["allocation_count"], 1.0),
+                2,
+            ),
+            expected_vehicle_count=round(summary["expected_vehicle_count"], 2),
+            distance_km=round(summary["distance_km"], 1),
+        )
+        for summary in state.flow_summary.values()
+    ]
+    snapshot = AreaSmallServerSnapshot(
+        area_id=state.area_id,
+        controlled_intersection_id=state.controlled_intersection_id,
+        window_minutes=state.window_minutes,
+        priority_radius_km=state.priority_radius_km,
+        generated_at=state.last_updated_at,
+        observation_count=state.observation_count,
+        decimal_directional_vehicle_count=_rounded_decimal_map(
+            state.decimal_directional_vehicle_count
+        ),
+        decimal_target_vehicle_count=_rounded_decimal_map(
+            state.decimal_target_vehicle_count
+        ),
+        average_speed_by_direction=average_speed_by_direction,
+        emergency_detected=state.emergency_detected,
+        wrong_way_count=state.wrong_way_count,
+        flows=flows,
+    )
+    payload = asdict(snapshot)
+    payload["generated_at"] = snapshot.generated_at.isoformat()
+    return payload
+
+
 def build_area_small_server_snapshot(
     readings: list[CameraFlowReading],
     area_id: str,
@@ -214,72 +371,30 @@ def build_area_small_server_snapshot(
     priority_radius_km: float = 20.0,
 ) -> dict[str, object]:
     snapshot_time = generated_at or datetime.utcnow()
-    window_start = snapshot_time.timestamp() - (window_minutes * 60)
+    state = create_area_small_server_state(
+        area_id=area_id,
+        controlled_intersection_id=controlled_intersection_id,
+        generated_at=snapshot_time,
+        window_minutes=window_minutes,
+        priority_radius_km=priority_radius_km,
+    )
+    state.window_started_at = datetime.fromtimestamp(
+        snapshot_time.timestamp() - (window_minutes * 60)
+    )
     relevant_readings = [
         reading
         for reading in readings
         if (
             reading.area_id == area_id
             and reading.controlled_intersection_id == controlled_intersection_id
-            and reading.captured_at.timestamp() >= window_start
+            and reading.captured_at >= state.window_started_at
         )
     ]
 
-    decimal_directional_vehicle_count: dict[str, float] = defaultdict(float)
-    decimal_target_vehicle_count: dict[int, float] = defaultdict(float)
-    speed_totals: dict[str, float] = defaultdict(float)
-    speed_weights: dict[str, float] = defaultdict(float)
-    flows: list[AreaFlowAllocation] = []
-    emergency_detected = False
-    wrong_way_count = 0
-
     for reading in relevant_readings:
-        emergency_detected = emergency_detected or reading.emergency_detected
-        wrong_way_count += reading.wrong_way_count
-        allocations = allocate_camera_flow(reading, priority_radius_km)
-        if not allocations:
-            continue
+        update_area_small_server_state(state, reading)
 
-        for allocation in allocations:
-            flows.append(allocation)
-            decimal_directional_vehicle_count[allocation.direction] += (
-                allocation.expected_vehicle_count
-            )
-            decimal_target_vehicle_count[allocation.target_intersection_id] += (
-                allocation.expected_vehicle_count
-            )
-            if reading.average_speed_kph is not None:
-                speed_totals[allocation.direction] += (
-                    allocation.expected_vehicle_count * reading.average_speed_kph
-                )
-                speed_weights[allocation.direction] += allocation.expected_vehicle_count
-
-    average_speed_by_direction = {
-        direction: round(speed_totals[direction] / max(speed_weights[direction], 1.0), 1)
-        for direction in speed_totals
-        if speed_weights[direction] > 0
-    }
-    snapshot = AreaSmallServerSnapshot(
-        area_id=area_id,
-        controlled_intersection_id=controlled_intersection_id,
-        window_minutes=window_minutes,
-        priority_radius_km=priority_radius_km,
-        generated_at=snapshot_time,
-        observation_count=len(relevant_readings),
-        decimal_directional_vehicle_count=_rounded_decimal_map(
-            decimal_directional_vehicle_count
-        ),
-        decimal_target_vehicle_count=_rounded_decimal_map(
-            decimal_target_vehicle_count
-        ),
-        average_speed_by_direction=average_speed_by_direction,
-        emergency_detected=emergency_detected,
-        wrong_way_count=wrong_way_count,
-        flows=flows,
-    )
-    payload = asdict(snapshot)
-    payload["generated_at"] = snapshot.generated_at.isoformat()
-    return payload
+    return snapshot_from_area_small_server_state(state)
 
 
 def build_optimizer_upload_from_area_snapshot(

@@ -93,7 +93,7 @@ Emergency corridor logic is not built as a separate isolated feature. It reuses 
 
 ### 4. Low-Connectivity Deployment Support
 
-ReDirect can work with additional roadside counting devices that process traffic locally and send only numeric summaries such as:
+ReDirect can work by reusing the small local servers that already store area camera data. These preinstalled local servers can process traffic locally and send only numeric summaries such as:
 
 - total vehicle count
 - directional counts
@@ -117,7 +117,7 @@ This selective feature improves enforcement value without making premium hardwar
 
 ### Edge Layer
 
-- receives camera or local device input
+- receives camera input from the local camera-storage server
 - performs lightweight local summarisation
 - sends numeric traffic values or compact metadata
 
@@ -144,7 +144,7 @@ This selective feature improves enforcement value without making premium hardwar
 
 - handles mixed traffic better than lane-dependent models
 - supports phased adoption instead of full replacement
-- can use existing cameras and selective small local servers for camera clusters
+- can use existing cameras and the local camera-storage servers already installed for those clusters
 - works for both traffic management and emergency response
 - remains extendable for future city command integration
 
@@ -188,6 +188,8 @@ The project is intentionally designed to be cost-aware:
 - no requirement for new premium hardware at every junction
 - support for lightweight numeric telemetry from small local camera servers
 - optional premium enforcement only where suitable cameras already exist
+
+Because these small local servers are already used for storing area camera data, ReDirect can reuse them for five-minute traffic aggregation without introducing a significant extra hardware cost.
 
 This makes the project more realistic for government pilots and gradual scale-up.
 
