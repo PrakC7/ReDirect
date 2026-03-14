@@ -1,5 +1,7 @@
-from dataclasses import asdict, dataclass
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from math import ceil
 
 
 @dataclass(slots=True)
@@ -48,6 +50,53 @@ class DirectionalCountCodePacket:
     wrong_way_count: int
     captured_epoch: int
     flows: list[DirectionalCountCode]
+
+
+@dataclass(slots=True)
+class CameraTargetOption:
+    target_intersection_id: int
+    distance_km: float
+    reachable_by_direction: bool = True
+
+
+@dataclass(slots=True)
+class CameraFlowReading:
+    area_id: str
+    camera_id: str
+    controlled_intersection_id: int
+    captured_at: datetime
+    direction: str
+    vehicle_count: int
+    average_speed_kph: float | None = None
+    emergency_detected: bool = False
+    wrong_way_count: int = 0
+    target_options: list[CameraTargetOption] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AreaFlowAllocation:
+    camera_id: str
+    direction: str
+    target_intersection_id: int
+    routing_probability: float
+    expected_vehicle_count: float
+    distance_km: float
+
+
+@dataclass(slots=True)
+class AreaSmallServerSnapshot:
+    area_id: str
+    controlled_intersection_id: int
+    window_minutes: int
+    priority_radius_km: float
+    generated_at: datetime
+    observation_count: int
+    decimal_directional_vehicle_count: dict[str, float]
+    decimal_target_vehicle_count: dict[int, float]
+    average_speed_by_direction: dict[str, float]
+    emergency_detected: bool
+    wrong_way_count: int
+    flows: list[AreaFlowAllocation]
 
 
 def _encode_directional_vehicle_count(
@@ -110,6 +159,173 @@ def compress_reading(reading: EdgeReading) -> dict[str, object]:
     if reading.average_speed_kph is not None:
         payload["average_speed_kph"] = round(reading.average_speed_kph, 1)
     return payload
+
+
+def _rounded_decimal_map(values: dict[object, float], decimals: int = 2) -> dict[object, float]:
+    return {
+        key: round(value, decimals)
+        for key, value in values.items()
+        if value > 0
+    }
+
+
+def _allocation_boost(option_count: int) -> float:
+    if option_count <= 1:
+        return 1.15
+    return 1.0
+
+
+def allocate_camera_flow(
+    reading: CameraFlowReading,
+    priority_radius_km: float = 20.0,
+) -> list[AreaFlowAllocation]:
+    eligible_targets = [
+        option
+        for option in reading.target_options
+        if option.reachable_by_direction and option.distance_km <= priority_radius_km
+    ]
+    if not eligible_targets:
+        return []
+
+    probability = round(1.0 / len(eligible_targets), 2)
+    boosted_vehicle_count = reading.vehicle_count * _allocation_boost(
+        len(eligible_targets)
+    )
+
+    return [
+        AreaFlowAllocation(
+            camera_id=reading.camera_id,
+            direction=reading.direction,
+            target_intersection_id=option.target_intersection_id,
+            routing_probability=probability,
+            expected_vehicle_count=round(boosted_vehicle_count * probability, 2),
+            distance_km=option.distance_km,
+        )
+        for option in eligible_targets
+    ]
+
+
+def build_area_small_server_snapshot(
+    readings: list[CameraFlowReading],
+    area_id: str,
+    controlled_intersection_id: int,
+    generated_at: datetime | None = None,
+    window_minutes: int = 5,
+    priority_radius_km: float = 20.0,
+) -> dict[str, object]:
+    snapshot_time = generated_at or datetime.utcnow()
+    window_start = snapshot_time.timestamp() - (window_minutes * 60)
+    relevant_readings = [
+        reading
+        for reading in readings
+        if (
+            reading.area_id == area_id
+            and reading.controlled_intersection_id == controlled_intersection_id
+            and reading.captured_at.timestamp() >= window_start
+        )
+    ]
+
+    decimal_directional_vehicle_count: dict[str, float] = defaultdict(float)
+    decimal_target_vehicle_count: dict[int, float] = defaultdict(float)
+    speed_totals: dict[str, float] = defaultdict(float)
+    speed_weights: dict[str, float] = defaultdict(float)
+    flows: list[AreaFlowAllocation] = []
+    emergency_detected = False
+    wrong_way_count = 0
+
+    for reading in relevant_readings:
+        emergency_detected = emergency_detected or reading.emergency_detected
+        wrong_way_count += reading.wrong_way_count
+        allocations = allocate_camera_flow(reading, priority_radius_km)
+        if not allocations:
+            continue
+
+        for allocation in allocations:
+            flows.append(allocation)
+            decimal_directional_vehicle_count[allocation.direction] += (
+                allocation.expected_vehicle_count
+            )
+            decimal_target_vehicle_count[allocation.target_intersection_id] += (
+                allocation.expected_vehicle_count
+            )
+            if reading.average_speed_kph is not None:
+                speed_totals[allocation.direction] += (
+                    allocation.expected_vehicle_count * reading.average_speed_kph
+                )
+                speed_weights[allocation.direction] += allocation.expected_vehicle_count
+
+    average_speed_by_direction = {
+        direction: round(speed_totals[direction] / max(speed_weights[direction], 1.0), 1)
+        for direction in speed_totals
+        if speed_weights[direction] > 0
+    }
+    snapshot = AreaSmallServerSnapshot(
+        area_id=area_id,
+        controlled_intersection_id=controlled_intersection_id,
+        window_minutes=window_minutes,
+        priority_radius_km=priority_radius_km,
+        generated_at=snapshot_time,
+        observation_count=len(relevant_readings),
+        decimal_directional_vehicle_count=_rounded_decimal_map(
+            decimal_directional_vehicle_count
+        ),
+        decimal_target_vehicle_count=_rounded_decimal_map(
+            decimal_target_vehicle_count
+        ),
+        average_speed_by_direction=average_speed_by_direction,
+        emergency_detected=emergency_detected,
+        wrong_way_count=wrong_way_count,
+        flows=flows,
+    )
+    payload = asdict(snapshot)
+    payload["generated_at"] = snapshot.generated_at.isoformat()
+    return payload
+
+
+def build_optimizer_upload_from_area_snapshot(
+    snapshot: dict[str, object],
+    sequence_id: int,
+    occupancy_index: float | None = None,
+) -> dict[str, int]:
+    decimal_directional_vehicle_count = {
+        str(direction): float(count)
+        for direction, count in snapshot.get("decimal_directional_vehicle_count", {}).items()
+    }
+    average_speed_by_direction = {
+        str(direction): round(float(speed_kph), 1)
+        for direction, speed_kph in snapshot.get("average_speed_by_direction", {}).items()
+    }
+    directional_vehicle_count = {
+        direction: int(ceil(count))
+        for direction, count in decimal_directional_vehicle_count.items()
+    }
+    vehicle_count = sum(directional_vehicle_count.values())
+    average_speed_total = sum(
+        directional_vehicle_count.get(direction, 0)
+        * average_speed_by_direction.get(direction, 0.0)
+        for direction in directional_vehicle_count
+    )
+    average_speed_kph = round(
+        average_speed_total / max(vehicle_count, 1),
+        1,
+    )
+    reading = EdgeReading(
+        intersection_id=int(snapshot["controlled_intersection_id"]),
+        vehicle_count=vehicle_count,
+        occupancy_index=round(
+            occupancy_index
+            if occupancy_index is not None
+            else min(vehicle_count / 120.0, 1.0),
+            2,
+        ),
+        emergency_detected=bool(snapshot.get("emergency_detected", False)),
+        captured_at=datetime.fromisoformat(str(snapshot["generated_at"])),
+        directional_vehicle_count=directional_vehicle_count,
+        wrong_way_count=int(snapshot.get("wrong_way_count", 0)),
+        average_speed_by_direction=average_speed_by_direction,
+        average_speed_kph=average_speed_kph,
+    )
+    return build_low_bandwidth_packet(reading, sequence_id)
 
 
 def build_low_bandwidth_packet(

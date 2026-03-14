@@ -144,7 +144,7 @@ This selective feature improves enforcement value without making premium hardwar
 
 - handles mixed traffic better than lane-dependent models
 - supports phased adoption instead of full replacement
-- can use existing cameras and selective roadside devices
+- can use existing cameras and selective small local servers for camera clusters
 - works for both traffic management and emergency response
 - remains extendable for future city command integration
 
@@ -186,7 +186,7 @@ The project is intentionally designed to be cost-aware:
 
 - open and maintainable software stack
 - no requirement for new premium hardware at every junction
-- support for lightweight numeric telemetry from roadside devices
+- support for lightweight numeric telemetry from small local camera servers
 - optional premium enforcement only where suitable cameras already exist
 
 This makes the project more realistic for government pilots and gradual scale-up.
